@@ -1,0 +1,62 @@
+{
+  "name": "beacon",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "."
+  },
+  "workspaceFolder": "/workspaces/beacon",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "configureZshAsDefaultShell": true
+    },
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+  "remoteUser": "node",
+  "onCreateCommand": "sudo chown -R 1000:1000 /workspaces/beacon && pnpm install",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "biomejs.biome",
+        "bradlc.vscode-tailwindcss",
+        "vitest.explorer",
+        "ms-vscode.vscode-typescript-next",
+        "mhutchie.git-graph",
+        "oderwat.indent-rainbow"
+      ],
+      "settings": {
+        "editor.defaultFormatter": "biomejs.biome",
+        "editor.formatOnSave": true,
+        "js/ts.tsdk.path": "node_modules/typescript/lib"
+      }
+    }
+
+  },
+  "mounts": [
+    {
+      "source": "beacon_beacon-node_modules",
+      "target": "/workspaces/beacon/node_modules",
+      "type": "volume"
+    },
+    {
+      "source": "${localEnv:HOME}/.ssh/id_ed25519.pub",
+      "target": "/home/node/.ssh/authorized_keys",
+      "type": "bind"
+    }
+  ],
+  "forwardPorts": [3000, 6006, 4983],
+  "portsAttributes": {
+    "3000": {
+      "label": "Vite Dev Server",
+      "onAutoForward": "notify"
+    },
+    "6006": {
+      "label": "Storybook",
+      "onAutoForward": "notify"
+    },
+    "4983": {
+      "label": "Drizzle Studio",
+      "onAutoForward": "notify"
+    }
+  }
+}

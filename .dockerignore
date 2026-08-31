@@ -1,0 +1,9 @@
+node_modules
+dist
+.nitro
+.tanstack
+.git
+.devcontainer
+.env
+.env.*
+*.local

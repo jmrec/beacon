@@ -1,0 +1,18 @@
+sync:
+  defaults:
+    mode: "two-way-resolved"
+    ignore:
+      vcs: true
+      paths:
+        - "node_modules"
+        - ".tanstack"
+        - ".git"
+        - ".DS_Store"
+        - ".devcontainer/devcontainer-lock.json"
+    permissions:
+      defaultFileMode: 0644
+      defaultDirectoryMode: 0755
+
+  remote-dev-sync:
+    alpha: "."
+    beta: "jmrec@wyse:61969:/home/jmrec/.devpod/agent/contexts/default/workspaces/beacon/content"

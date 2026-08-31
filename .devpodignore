@@ -1,0 +1,22 @@
+node_modules
+
+# Build outputs
+dist
+dist-ssr
+storybook-static
+.output
+.nitro
+.vinxi
+__unconfig*
+
+# secrets
+.env.production
+
+# Generated files & caches
+.tanstack
+.wrangler
+todos.json
+
+# macOS
+.DS_Store
+*.log
