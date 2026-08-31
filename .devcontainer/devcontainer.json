@@ -10,7 +10,8 @@
       "installZsh": true,
       "configureZshAsDefaultShell": true
     },
-    "ghcr.io/devcontainers/features/git:1": {}
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/jungaretti/features/vim:1": {}
   },
   "remoteUser": "node",
   "onCreateCommand": "sudo chown -R 1000:1000 /workspaces/beacon && pnpm install",
