@@ -1,10 +1,5 @@
 {
   "name": "beacon",
-  "build": {
-    "dockerfile": "Dockerfile",
-    "context": "."
-  },
-  "workspaceFolder": "/workspaces/beacon",
   "features": {
     "ghcr.io/devcontainers/features/common-utils:2": {
       "installZsh": true,
@@ -14,7 +9,16 @@
     "ghcr.io/jungaretti/features/vim:1": {}
   },
   "remoteUser": "node",
-  "onCreateCommand": "sudo chown -R 1000:1000 /workspaces/beacon && pnpm install",
+  "containerEnv": {
+    "COREPACK_ENABLE_DOWNLOAD_PROMPT": "0"
+  },
+  "onCreateCommand": "corepack enable && corepack prepare pnpm@12.1.0 --activate",
+  "updateContentCommand": "sudo chown -R node:node /workspaces/beacon /home/node && pnpm install",
+  "postCreateCommand": {
+    "git-gpg-format": "git config --global gpg.format ssh",
+    "git-signing-key": "git config --global user.signingkey /home/node/.ssh/id_ed25519_signing.pub",
+    "git-gpg-sign": "git config --global commit.gpgsign true"
+  },
   "customizations": {
     "vscode": {
       "extensions": [
@@ -42,6 +46,11 @@
     {
       "source": "${localEnv:HOME}/.ssh/id_ed25519.pub",
       "target": "/home/node/.ssh/authorized_keys",
+      "type": "bind"
+    },
+    {
+      "source": "${localEnv:HOME}/.ssh/id_ed25519_signing.pub",
+      "target": "/home/node/.ssh/id_ed25519_signing.pub",
       "type": "bind"
     }
   ],
