@@ -140,14 +140,15 @@ export default function OutageMap() {
         attributionControl: false,
       });
 
-      map.addControl(
-        new GeolocateControl({
+      if ("geolocation" in navigator) {
+        const geolocate = new GeolocateControl({
           positionOptions: { enableHighAccuracy: true },
           trackUserLocation: true,
           showUserLocation: true,
-        }),
-        "bottom-right",
-      );
+        });
+        geolocate.on("error", () => {});
+        map.addControl(geolocate, "bottom-right");
+      }
       map.addControl(new NavigationControl({}), "bottom-right");
 
       map.on("load", () => {
