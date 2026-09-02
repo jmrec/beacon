@@ -3,6 +3,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import {
   createRootRouteWithContext,
   HeadContent,
+  Link,
   Scripts,
 } from "@tanstack/react-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
@@ -41,7 +42,27 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
     ],
   }),
   shellComponent: RootDocument,
+  notFoundComponent: NotFound,
 });
+
+function NotFound() {
+  return (
+    <main className="page-wrap px-4 py-12">
+      <section className="flex flex-col gap-3 island-shell rounded-2xl p-6 sm:p-8">
+        <p className="island-kicker">404</p>
+        <h1 className="display-title text-4xl font-bold sm:text-5xl">
+          Page not found
+        </h1>
+        <p className="max-w-xl">
+          The page you're looking for doesn't exist or has moved.
+        </p>
+        <Link to="/" className="nav-link">
+          Back to Home
+        </Link>
+      </section>
+    </main>
+  );
+}
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
