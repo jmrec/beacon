@@ -6,32 +6,29 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { env } from "../env";
 import { getOutages, type OutageFeed, type OutagePeriod } from "../lib/beneco";
 
-type AdminLevel = "barangays" | "municipalities" | "provinces";
+const LEVELS = ["barangay", "city", "province"] as const;
 
-const LEVELS: readonly AdminLevel[] = [
-  "barangays",
-  "municipalities",
-  "provinces",
-];
+type AdminLevel = (typeof LEVELS)[number];
 
 const LEVEL_LABELS: Record<AdminLevel, string> = {
-  provinces: "Province",
-  municipalities: "City/Mun.",
-  barangays: "Barangay",
+  province: "Province",
+  city: "City/Mun.",
+  barangay: "Barangay",
 };
 
 const LEVEL_COLORS: Record<AdminLevel, string> = {
-  provinces: "#d97706",
-  municipalities: "#2563eb",
-  barangays: "#088",
+  province: "#d97706",
+  city: "#2563eb",
+  barangay: "#088",
 };
 
-const CENTER: [number, number] = [120.69185, 16.5529];
+const CENTER: [number, number] = [120.594542, 16.410872];
+const INITIAL_ZOOM = 12;
 const MAX_ZOOM = 16;
 const STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
 const BENGUET_BOUNDS: [[number, number], [number, number]] = [
-  [119.5, 15.2],
-  [122.0, 18.0],
+  [119.711151, 16.060331],
+  [121.654358, 16.988502],
 ];
 
 type HoverInfo = {
@@ -100,7 +97,7 @@ export default function OutageMap() {
   const [isLoading, setIsLoading] = useState(true);
   const [showBaseMap, setShowBaseMap] = useState(true);
   const [showBoundaries, setShowBoundaries] = useState(true);
-  const [activeLevel, setActiveLevel] = useState<AdminLevel>("barangays");
+  const [activeLevel, setActiveLevel] = useState<AdminLevel>("barangay");
   const [hoveredInfo, setHoveredInfo] = useState<HoverInfo>(null);
   const [period, setPeriod] = useState<OutagePeriod>("this_week");
 
@@ -135,6 +132,7 @@ export default function OutageMap() {
         container,
         center: CENTER,
         style: STYLE_URL,
+        zoom: INITIAL_ZOOM,
         maxZoom: MAX_ZOOM,
         maxBounds: new LngLatBounds(BENGUET_BOUNDS[0], BENGUET_BOUNDS[1]),
         attributionControl: false,
