@@ -23,6 +23,13 @@ export default function Header() {
             Map
           </Link>
           <Link
+            to="/outages"
+            className="nav-link"
+            activeProps={{ className: "nav-link is-active" }}
+          >
+            Outages
+          </Link>
+          <Link
             to="/about"
             className="nav-link"
             activeProps={{ className: "nav-link is-active" }}

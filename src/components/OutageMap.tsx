@@ -1,10 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
 import { Layers, Loader2, Map as MapIcon, Settings2 } from "lucide-react";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { env } from "../env";
-import { getOutages, type OutageFeed, type OutagePeriod } from "../lib/beneco";
 
 const LEVELS = ["barangay", "city", "province"] as const;
 
@@ -99,17 +97,11 @@ export default function OutageMap() {
   const [showBoundaries, setShowBoundaries] = useState(true);
   const [activeLevel, setActiveLevel] = useState<AdminLevel>("barangay");
   const [hoveredInfo, setHoveredInfo] = useState<HoverInfo>(null);
-  const [period, setPeriod] = useState<OutagePeriod>("this_week");
 
   const activeLevelRef = useRef(activeLevel);
   activeLevelRef.current = activeLevel;
   const showBaseMapRef = useRef(showBaseMap);
   const showBoundariesRef = useRef(showBoundaries);
-
-  const outages = useQuery({
-    queryKey: ["beneco", period],
-    queryFn: () => getOutages({ data: { period } }),
-  });
 
   useEffect(() => {
     const container = containerRef.current;
@@ -238,14 +230,6 @@ export default function OutageMap() {
     <div className="relative h-full w-full overflow-hidden bg-slate-950">
       <div ref={containerRef} className="absolute inset-0 h-full w-full" />
 
-      <OutagePanel
-        data={outages.data}
-        isLoading={outages.isLoading}
-        isError={outages.isError}
-        period={period}
-        onPeriodChange={setPeriod}
-      />
-
       <div className="absolute right-2 top-3 z-10 flex flex-col gap-1.5">
         <button
           type="button"
@@ -305,116 +289,6 @@ export default function OutageMap() {
           <p className="font-mono text-xs uppercase tracking-[0.2em]">
             Initializing Map
           </p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function OutagePanel({
-  data,
-  isLoading,
-  isError,
-  period,
-  onPeriodChange,
-}: {
-  data: OutageFeed | undefined;
-  isLoading: boolean;
-  isError: boolean;
-  period: OutagePeriod;
-  onPeriodChange: (period: OutagePeriod) => void;
-}) {
-  return (
-    <div className="absolute left-3 top-3 z-10 flex max-h-[calc(100%-1.5rem)] w-80 max-w-[calc(100%-1.5rem)] flex-col rounded-xl border border-slate-700/50 bg-slate-900/90 text-slate-200 shadow-lg backdrop-blur-sm">
-      <div className="flex items-center justify-between gap-2 border-b border-slate-700/50 px-3 py-2">
-        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-          Outages
-        </p>
-        <select
-          value={period}
-          onChange={(e) => onPeriodChange(e.target.value as OutagePeriod)}
-          className="rounded-md border border-slate-700/50 bg-slate-800 px-2 py-1 text-xs text-slate-200 outline-none"
-        >
-          <option value="today">Today</option>
-          <option value="this_week">This Week</option>
-          <option value="last_week">Last Week</option>
-        </select>
-      </div>
-
-      {isLoading && (
-        <p className="px-3 py-2 text-xs text-slate-500">Loading outages…</p>
-      )}
-      {isError && (
-        <p className="px-3 py-2 text-xs text-rose-400">
-          Failed to load outages.
-        </p>
-      )}
-
-      {!isLoading && !isError && data && (
-        <div className="overflow-y-auto px-3 py-2 text-xs">
-          <p className="mb-1.5 font-semibold text-amber-400">
-            Unscheduled · {data.unscheduled.length}
-          </p>
-          {data.unscheduled.length === 0 && (
-            <p className="mb-2 text-slate-500">No unscheduled outages.</p>
-          )}
-          <ul className="mb-3 space-y-2">
-            {data.unscheduled.map((o) => (
-              <li
-                key={o.id}
-                className="rounded-lg border border-slate-700/50 bg-slate-800/60 p-2"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium text-slate-100">
-                    {o.feeder.trim()}
-                  </span>
-                  <span
-                    className={
-                      o.status === "Ongoing"
-                        ? "rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-semibold text-amber-300"
-                        : "rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-300"
-                    }
-                  >
-                    {o.status}
-                  </span>
-                </div>
-                <p className="mt-1 line-clamp-2 text-slate-400">{o.area}</p>
-                <p className="mt-1 text-[11px] text-slate-500">
-                  Off {o.timeoff} · {o.duration}
-                </p>
-              </li>
-            ))}
-          </ul>
-
-          <p className="mb-1.5 font-semibold text-sky-400">
-            Scheduled · {data.scheduled.length}
-          </p>
-          {data.scheduled.length === 0 && (
-            <p className="mb-2 text-slate-500">No scheduled outages.</p>
-          )}
-          <ul className="space-y-2">
-            {data.scheduled.map((o) => (
-              <li
-                key={o.id}
-                className="rounded-lg border border-slate-700/50 bg-slate-800/60 p-2"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium text-slate-100">
-                    {o.feeder.trim()}
-                  </span>
-                  {o.cancelled === 1 && (
-                    <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-[10px] font-semibold text-rose-300">
-                      Cancelled
-                    </span>
-                  )}
-                </div>
-                <p className="mt-1 line-clamp-2 text-slate-400">{o.areas}</p>
-                <p className="mt-1 text-[11px] text-slate-500">
-                  {o.date} · {o.timeoff}–{o.timerestored} · {o.noofcons} cons
-                </p>
-              </li>
-            ))}
-          </ul>
         </div>
       )}
     </div>

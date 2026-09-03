@@ -27,7 +27,12 @@ const config = defineConfig({
     exclude: ["maplibre-gl"],
   },
   plugins: [
-    devtools(),
+    devtools({
+      injectSource: {
+        enabled: true,
+        ignore: { components: [/AgGrid/i] },
+      },
+    }),
     nitro({
       rollupConfig: {
         external: [/^@sentry\//],
