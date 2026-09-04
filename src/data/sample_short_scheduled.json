@@ -1,0 +1,18 @@
+[
+  {
+    "id": 55165,
+    "intrtype": "BENECO Scheduled Interruption",
+    "feeder": "Circuit 4",
+    "deenergized": "BS00587 Pugo Sectionalizer",
+    "poleid": "",
+    "areas": "Buguias: Parts of Baculongan Norte (Pugo, Bangsalan, lam-ayan, Walengweng)",
+    "date": "Sep 03, 2026",
+    "timeoff": "9:00AM",
+    "timerestored": "5:00PM",
+    "purpose": "Relocation of leaning primary pole due to eroded base caused by Typhoon Maymay",
+    "logged": 0,
+    "noofcons": 492,
+    "remarks": "Habagat",
+    "cancelled": 1
+  }
+]

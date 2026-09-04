@@ -1,0 +1,144 @@
+[
+  {
+    "municipalities": [
+      {
+        "id": 5,
+        "name": "BUGUIAS",
+        "pcode": "PH1401105",
+        "confidence": "high",
+        "scope": {
+          "kind": "included",
+          "barangays": [
+            {
+              "id": 168,
+              "name": "Natubleng",
+              "pcode": "PH1401105012",
+              "confidence": "medium",
+              "scope": {
+                "kind": "whole"
+              }
+            },
+            {
+              "id": 13,
+              "name": "Amgaleyguey",
+              "pcode": "PH1401105002",
+              "confidence": "high",
+              "scope": {
+                "kind": "partial"
+              }
+            },
+            {
+              "id": 135,
+              "name": "Lengaoan",
+              "pcode": "PH1401105015",
+              "confidence": "high",
+              "scope": {
+                "kind": "whole"
+              }
+            },
+            {
+              "id": 60,
+              "name": "Buyacaoan",
+              "pcode": "PH1401105007",
+              "confidence": "high",
+              "scope": {
+                "kind": "whole"
+              }
+            },
+            {
+              "id": 1,
+              "name": "Abatan",
+              "pcode": "PH1401105001",
+              "confidence": "high",
+              "scope": {
+                "kind": "whole"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": 3,
+        "name": "BAKUN",
+        "pcode": "PH1401103",
+        "confidence": "high",
+        "scope": {
+          "kind": "excluded",
+          "barangays": [
+            {
+              "id": 105,
+              "name": "Gambang",
+              "pcode": "PH1401103005",
+              "confidence": "high",
+              "scope": {
+                "kind": "partial"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "id": 9,
+        "name": "KIBUNGAN",
+        "pcode": "PH1401109",
+        "confidence": "high",
+        "scope": {
+          "kind": "included",
+          "barangays": [
+            {
+              "id": 179,
+              "name": "Palina",
+              "pcode": "PH1401109004",
+              "confidence": "high",
+              "scope": {
+                "kind": "whole"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "unresolved": [
+      "Sinipsip",
+      "Kayapa",
+      "Lamew"
+    ],
+    "key": "u-68079",
+    "kind": "unscheduled",
+    "outageId": 68079
+  },
+  {
+    "municipalities": [
+      {
+        "id": 5,
+        "name": "BUGUIAS",
+        "pcode": "PH1401105",
+        "confidence": "high",
+        "scope": {
+          "kind": "included",
+          "barangays": [
+            {
+              "id": 25,
+              "name": "Baculongan Norte",
+              "pcode": "PH1401105004",
+              "confidence": "high",
+              "scope": {
+                "kind": "included",
+                "areas": [
+                  "Pugo",
+                  "Bangsalan",
+                  "lam-ayan",
+                  "Walengweng"
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "unresolved": [],
+    "key": "s-55165",
+    "kind": "scheduled",
+    "outageId": 55165
+  }
+]
