@@ -1,4 +1,8 @@
+import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { drizzle, type NeonHttpDatabase } from "drizzle-orm/neon-http";
+
 import { getClient } from "../../db.ts";
+import { barangays, municipalities } from "./schema.ts";
 
 interface Municipality {
   id: number;
@@ -20,91 +24,95 @@ interface BarangayMatch extends Barangay {
   score: number;
 }
 
-type Row = Record<string, unknown>;
+type BenecoSchema = {
+  municipalities: typeof municipalities;
+  barangays: typeof barangays;
+};
 
-function toMunicipality(row: Row): Municipality {
-  return { id: Number(row.id), name: String(row.name) };
-}
+let db: NeonHttpDatabase<BenecoSchema> | undefined;
 
-function toBarangay(row: Row): Barangay {
-  return {
-    id: Number(row.id),
-    name: String(row.name),
-    municipality: String(row.municipality),
-    municipalityId: Number(row.municipality_id),
-    pcode: row.pcode == null ? null : String(row.pcode),
-  };
+async function getDb(): Promise<NeonHttpDatabase<BenecoSchema> | undefined> {
+  const client = await getClient();
+  if (!client) return undefined;
+  db ??= drizzle(client, { schema: { municipalities, barangays } });
+  return db;
 }
 
 async function listMunicipalities(): Promise<Municipality[]> {
-  const sql = await getClient();
-  if (!sql) return [];
-  const rows = (await sql`
-    select id::int as id, name
-    from beneco.municipalities
-    order by name asc
-  `) as Row[];
-  return rows.map(toMunicipality);
+  const db = await getDb();
+  if (!db) return [];
+  return await db
+    .select({ id: municipalities.id, name: municipalities.name })
+    .from(municipalities)
+    .orderBy(municipalities.name);
 }
 
 /** Best municipality match: exact (case-insensitive) first, then containment. */
 async function findMunicipality(
   name: string,
 ): Promise<Municipality | undefined> {
-  const sql = await getClient();
-  if (!sql) return undefined;
+  const db = await getDb();
+  if (!db) return undefined;
   const q = name.trim().toLowerCase();
   if (!q) return undefined;
 
-  let rows = (await sql`
-    select id::int as id, name
-    from beneco.municipalities
-    where lower(name) = ${q}
-    limit 1
-  `) as Row[];
-  if (rows.length > 0) return toMunicipality(rows[0]);
+  const cols = { id: municipalities.id, name: municipalities.name };
 
-  rows = (await sql`
-    select id::int as id, name
-    from beneco.municipalities
-    where lower(name) like ${`%${q}%`} or ${q} like '%' || lower(name) || '%'
-    order by length(name) asc
-    limit 1
-  `) as Row[];
-  return rows.length > 0 ? toMunicipality(rows[0]) : undefined;
+  const exact = await db
+    .select(cols)
+    .from(municipalities)
+    .where(sql`lower(${municipalities.name}) = ${q}`)
+    .limit(1);
+  if (exact.length > 0) return exact[0];
+
+  const contain = await db
+    .select(cols)
+    .from(municipalities)
+    .where(
+      sql`lower(${municipalities.name}) like ${`%${q}%`}
+        or ${q} like '%' || lower(${municipalities.name}) || '%'`,
+    )
+    .orderBy(sql`length(${municipalities.name}) asc`)
+    .limit(1);
+  return contain.length > 0 ? contain[0] : undefined;
 }
 
 async function suggestMunicipalities(
   name: string,
   limit = 5,
 ): Promise<Municipality[]> {
-  const sql = await getClient();
-  if (!sql) return [];
+  const db = await getDb();
+  if (!db) return [];
   const q = name.trim().toLowerCase();
   if (!q) return [];
-  const rows = (await sql`
-    select id::int as id, name
-    from beneco.municipalities
-    where lower(name) like ${`%${q}%`} or ${q} like '%' || lower(name) || '%'
-    order by length(name) asc
-    limit ${limit}
-  `) as Row[];
-  return rows.map(toMunicipality);
+  return await db
+    .select({ id: municipalities.id, name: municipalities.name })
+    .from(municipalities)
+    .where(
+      sql`lower(${municipalities.name}) like ${`%${q}%`}
+        or ${q} like '%' || lower(${municipalities.name}) || '%'`,
+    )
+    .orderBy(sql`length(${municipalities.name}) asc`)
+    .limit(limit);
 }
 
 async function barangaysForMunicipality(
   municipalityId: number,
 ): Promise<Barangay[]> {
-  const sql = await getClient();
-  if (!sql) return [];
-  const rows = (await sql`
-    select b.id::int as id, b.name, b.pcode, m.name as municipality, m.id::int as municipality_id
-    from beneco.barangays b
-    join beneco.municipalities m on m.id = b.municipality_id
-    where b.municipality_id = ${municipalityId}
-    order by b.name asc
-  `) as Row[];
-  return rows.map(toBarangay);
+  const db = await getDb();
+  if (!db) return [];
+  return await db
+    .select({
+      id: barangays.id,
+      name: barangays.name,
+      pcode: barangays.pcode,
+      municipality: municipalities.name,
+      municipalityId: municipalities.id,
+    })
+    .from(barangays)
+    .innerJoin(municipalities, eq(municipalities.id, barangays.municipalityId))
+    .where(eq(barangays.municipalityId, municipalityId))
+    .orderBy(barangays.name);
 }
 
 async function searchBarangays(opts: {
@@ -112,49 +120,37 @@ async function searchBarangays(opts: {
   municipalityId?: number;
   limit?: number;
 }): Promise<BarangayMatch[]> {
-  const sql = await getClient();
-  if (!sql) return [];
+  const db = await getDb();
+  if (!db) return [];
   const q = opts.query.trim().toLowerCase();
   if (!q) return [];
   const limit = Math.max(1, Math.min(opts.limit ?? 8, 20));
-  const mun = opts.municipalityId;
 
-  const rows: Row[] =
-    mun == null
-      ? ((await sql`
-            select b.id::int as id, b.name, b.pcode,
-                   m.name as municipality, m.id::int as municipality_id,
-                   greatest(
-                     coalesce(similarity(lower(b.name), ${q}), 0),
-                     coalesce(word_similarity(${q}, lower(b.name)), 0)
-                   ) as score
-            from beneco.barangays b
-            join beneco.municipalities m on m.id = b.municipality_id
-            where greatest(
-                    coalesce(similarity(lower(b.name), ${q}), 0),
-                    coalesce(word_similarity(${q}, lower(b.name)), 0)
-                  ) >= 0.25
-            order by score desc, b.name asc
-            limit ${limit}
-          `) as Row[])
-      : ((await sql`
-            select b.id::int as id, b.name, b.pcode,
-                   m.name as municipality, m.id::int as municipality_id,
-                   greatest(
-                     coalesce(similarity(lower(b.name), ${q}), 0),
-                     coalesce(word_similarity(${q}, lower(b.name)), 0)
-                   ) as score
-            from beneco.barangays b
-            join beneco.municipalities m on m.id = b.municipality_id
-            where b.municipality_id = ${mun}
-              and greatest(
-                    coalesce(similarity(lower(b.name), ${q}), 0),
-                    coalesce(word_similarity(${q}, lower(b.name)), 0)
-                  ) >= 0.25
-            order by score desc, b.name asc
-            limit ${limit}
-          `) as Row[]);
-  return rows.map((r) => ({ ...toBarangay(r), score: Number(r.score) }));
+  const score = sql<number>`
+    greatest(
+      coalesce(similarity(lower(${barangays.name}), ${q}), 0),
+      coalesce(word_similarity(${q}, lower(${barangays.name})), 0)
+    )`;
+
+  const conditions = [gte(score, 0.25)];
+  if (opts.municipalityId != null) {
+    conditions.push(eq(barangays.municipalityId, opts.municipalityId));
+  }
+
+  return await db
+    .select({
+      id: barangays.id,
+      name: barangays.name,
+      pcode: barangays.pcode,
+      municipality: municipalities.name,
+      municipalityId: municipalities.id,
+      score,
+    })
+    .from(barangays)
+    .innerJoin(municipalities, eq(municipalities.id, barangays.municipalityId))
+    .where(and(...conditions))
+    .orderBy(desc(score), barangays.name)
+    .limit(limit);
 }
 
 interface BarangayNameMatch {
