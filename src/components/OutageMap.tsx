@@ -1,8 +1,13 @@
 import { Layers, Loader2, Map as MapIcon, Settings2 } from "lucide-react";
 import type { Map as MapLibreMap } from "maplibre-gl";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { env } from "../env";
+import {
+  type AreaOverlayCounts,
+  aggregateAffectedCounts,
+} from "../lib/area-overlay";
+import type { AreaResolutionOutcome } from "../lib/beneco-area/types/internal.ts";
 
 const LEVELS = ["barangay", "city", "province"] as const;
 
@@ -88,20 +93,115 @@ function updateBoundaryVisibility(
   }
 }
 
-export default function OutageMap() {
+type CountMap = Map<string, number>;
+
+function severityColor(count: number): string {
+  if (count >= 3) return "#ef4444"; // red-500
+  if (count === 2) return "#eab308"; // yellow-500
+  return "#22c55e"; // green-500
+}
+
+/** Map each affected pcode to a severity color; all others transparent. */
+function buildColorExpression(
+  counts: CountMap,
+  pcodeKey: "adm3_pcode" | "adm4_pcode",
+) {
+  const expression: unknown[] = ["match", ["get", pcodeKey]];
+  for (const [pcode, count] of counts) {
+    expression.push(pcode, severityColor(count));
+  }
+  expression.push("rgba(0,0,0,0)");
+  return expression;
+}
+
+function applyOverlayLayer(
+  map: MapLibreMap,
+  id: string,
+  sourceLayer: string,
+  before: string,
+  pcodeKey: "adm3_pcode" | "adm4_pcode",
+  level: "city" | "barangay",
+  counts: CountMap,
+  visible: boolean,
+) {
+  if (!map.getLayer(id)) {
+    map.addLayer(
+      {
+        id,
+        type: "fill",
+        source: "benguet",
+        "source-layer": sourceLayer,
+        layout: { visibility: "none" },
+        paint: {
+          "fill-color": "rgba(0,0,0,0)",
+          "fill-opacity": level === "city" ? 0.45 : 0.6,
+        },
+      },
+      before,
+    );
+  }
+  map.setLayoutProperty(id, "visibility", visible ? "visible" : "none");
+  map.setPaintProperty(
+    id,
+    "fill-color",
+    buildColorExpression(counts, pcodeKey) as never,
+  );
+}
+
+function updateAreaOverlays(
+  map: MapLibreMap,
+  counts: AreaOverlayCounts,
+  visible: boolean,
+) {
+  applyOverlayLayer(
+    map,
+    "area-city-fill",
+    "city",
+    "city-outline",
+    "adm3_pcode",
+    "city",
+    counts.city,
+    visible,
+  );
+  applyOverlayLayer(
+    map,
+    "area-barangay-fill",
+    "barangay",
+    "barangay-outline",
+    "adm4_pcode",
+    "barangay",
+    counts.barangay,
+    visible,
+  );
+}
+
+export default function OutageMap({
+  resolvedAreas,
+}: {
+  resolvedAreas?: AreaResolutionOutcome[];
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
+  const [mapReady, setMapReady] = useState(false);
   const [showBaseMap, setShowBaseMap] = useState(true);
   const [showBoundaries, setShowBoundaries] = useState(true);
   const [activeLevel, setActiveLevel] = useState<AdminLevel>("barangay");
   const [hoveredInfo, setHoveredInfo] = useState<HoverInfo>(null);
 
+  const affectedCounts = useMemo(
+    () => aggregateAffectedCounts(resolvedAreas ?? []),
+    [resolvedAreas],
+  );
+
   const activeLevelRef = useRef(activeLevel);
   activeLevelRef.current = activeLevel;
   const showBaseMapRef = useRef(showBaseMap);
   const showBoundariesRef = useRef(showBoundaries);
+  const popupRef = useRef<HTMLDivElement>(null);
+  const popupWidthRef = useRef(0);
+  const [popupSide, setPopupSide] = useState<"left" | "right">("right");
 
   useEffect(() => {
     const container = containerRef.current;
@@ -148,7 +248,11 @@ export default function OutageMap() {
         m.addSource("benguet", {
           type: "vector",
           url: env.VITE_PH_BOUNDARIES_URL,
-          promoteId: "ADM4_PCODE",
+          promoteId: {
+            barangay: "adm4_pcode",
+            city: "adm3_pcode",
+            province: "adm2_pcode",
+          },
           encoding: "mlt",
           maxzoom: MAX_ZOOM,
         });
@@ -197,6 +301,7 @@ export default function OutageMap() {
         }
 
         mapRef.current = m;
+        setMapReady(true);
         setIsLoading(false);
       });
 
@@ -223,6 +328,32 @@ export default function OutageMap() {
     if (mapRef.current)
       updateBoundaryVisibility(mapRef.current, activeLevel, showBoundaries);
   }, [activeLevel, showBoundaries]);
+
+  useEffect(() => {
+    if (!mapRef.current || !mapReady) return;
+    const hasAffected =
+      affectedCounts.city.size > 0 || affectedCounts.barangay.size > 0;
+    updateAreaOverlays(
+      mapRef.current,
+      affectedCounts,
+      showBoundaries && hasAffected,
+    );
+  }, [mapReady, affectedCounts, showBoundaries]);
+
+  useLayoutEffect(() => {
+    const el = popupRef.current;
+    if (!el || !hoveredInfo) return;
+    popupWidthRef.current = el.offsetWidth;
+    const containerWidth = containerRef.current?.clientWidth ?? 0;
+    const useRightSide = hoveredInfo.x <= containerWidth / 1.3;
+    setPopupSide((prev) =>
+      prev === (useRightSide ? "right" : "left")
+        ? prev
+        : useRightSide
+          ? "right"
+          : "left",
+    );
+  }, [hoveredInfo]);
 
   const labels = hoveredInfo ? tooltipLabels(hoveredInfo.props) : null;
 
@@ -272,14 +403,23 @@ export default function OutageMap() {
 
       {labels && hoveredInfo && (
         <div
-          className="pointer-events-none absolute z-50 rounded-lg border border-slate-700/50 bg-slate-900/90 px-3 py-2 text-xs text-slate-200 shadow-lg backdrop-blur-sm"
-          style={{ left: hoveredInfo.x + 12, top: hoveredInfo.y + 12 }}
+          ref={popupRef}
+          className="pointer-events-none absolute z-50 flex flex-col gap-0.5 rounded-md border bg-popover px-2.5 py-1.5 text-xs text-popover-foreground shadow-md backdrop-blur-sm"
+          style={{
+            left:
+              popupSide === "left"
+                ? hoveredInfo.x - popupWidthRef.current - 12
+                : hoveredInfo.x + 12,
+            top: hoveredInfo.y + 12,
+          }}
         >
-          <p className="font-semibold text-white">{labels.primary}</p>
+          <p className="font-semibold">{labels.primary}</p>
           {labels.secondary && (
-            <p className="text-[11px] text-slate-400">{labels.secondary}</p>
+            <p className="text-muted-foreground">{labels.secondary}</p>
           )}
-          <p className="mt-0.5 text-[10px] text-slate-500">{labels.tertiary}</p>
+          {labels.tertiary && (
+            <p className="text-muted-foreground">{labels.tertiary}</p>
+          )}
         </div>
       )}
 
