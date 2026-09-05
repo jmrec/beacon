@@ -6,6 +6,12 @@ export const env = createEnv({
     SERVER_URL: z.url().optional(),
     BENECO_UNSCHEDULED_OUTAGE_URL: z.url().optional(),
     BENECO_SCHEDULED_OUTAGE_URL: z.url().optional(),
+    BENECO_UNSCHEDULED_PERIOD: z
+      .enum(["today", "this_week", "last_week"])
+      .default("today"),
+    BENECO_SCHEDULED_PERIOD: z
+      .enum(["today", "this_week", "last_week"])
+      .default("today"),
     BENECO_AREA_CONCURRENCY: z.coerce.number().int().min(1).max(8).optional(),
   },
 

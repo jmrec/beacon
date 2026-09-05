@@ -6,6 +6,7 @@ import {
   startOfDay,
   sub,
 } from "date-fns";
+import { env } from "../../env.ts";
 import type { AreaOverlayOutage } from "./area-overlay.ts";
 import { fetchScheduledFeed, fetchUnscheduledFeed } from "./feed.ts";
 import {
@@ -16,7 +17,7 @@ import {
 } from "./repos/dedup.ts";
 import { resolveOutageAreas, tasksFromOutageFeed } from "./resolver.ts";
 import type { ScheduledOutage, UnscheduledOutage } from "./types/api.ts";
-import type { AreaResolutionOutcome } from "./types/internal.ts";
+import type { AreaResolutionOutcome, AreaTask } from "./types/internal.ts";
 
 type RecentlyResolvedWindow =
   | { mode: "sameDay" }
@@ -26,6 +27,14 @@ const RECENTLY_RESOLVED_WINDOW: RecentlyResolvedWindow = {
   mode: "sameDay",
 };
 const ZERO_DATE_PREFIX = "0000-00-00";
+
+function iterationBudget(task: AreaTask): number {
+  const period =
+    task.kind === "scheduled"
+      ? env.BENECO_SCHEDULED_PERIOD
+      : env.BENECO_UNSCHEDULED_PERIOD;
+  return period === "today" ? 10 : 24;
+}
 
 function toDate(raw?: string): Date | null {
   if (!raw || raw.startsWith(ZERO_DATE_PREFIX)) return null;
@@ -99,8 +108,8 @@ function classify(
 export const getResolvedOutageAreas = createServerFn({ method: "GET" }).handler(
   async (): Promise<AreaOverlayOutage[]> => {
     const [unscheduled, scheduled] = await Promise.all([
-      fetchUnscheduledFeed("today"),
-      fetchScheduledFeed("today"),
+      fetchUnscheduledFeed(env.BENECO_UNSCHEDULED_PERIOD),
+      fetchScheduledFeed(env.BENECO_SCHEDULED_PERIOD),
     ]).catch(() => [[], []]);
 
     const tasks = tasksFromOutageFeed({ unscheduled, scheduled });
@@ -131,7 +140,10 @@ export const getResolvedOutageAreas = createServerFn({ method: "GET" }).handler(
     });
 
     if (needResolve.length > 0) {
-      const fresh = await resolveOutageAreas(needResolve, { concurrency: 3 });
+      const fresh = await resolveOutageAreas(needResolve, {
+        concurrency: 3,
+        maxIterations: iterationBudget,
+      });
       try {
         await upsertResolvedOutageRows(
           fresh.map((outcome) => ({

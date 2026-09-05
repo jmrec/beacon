@@ -75,20 +75,26 @@ function buildUserMessage(task: AreaTask): string {
   ].join("\n");
 }
 
-async function resolveSingle(task: AreaTask): Promise<AreaResolution> {
+const DEFAULT_MAX_ITERATIONS = 10;
+
+async function resolveSingle(
+  task: AreaTask,
+  maxTurns: number,
+): Promise<AreaResolution> {
   const wire = await chat({
     adapter: createLlmAdapter(),
     systemPrompts: [SYSTEM_PROMPT],
     messages: [{ role: "user", content: buildUserMessage(task) }],
     tools: areaResolverTools,
     outputSchema: AreaResolutionWireSchema,
-    agentLoopStrategy: maxIterations(10),
+    agentLoopStrategy: maxIterations(maxTurns),
   });
   return parseAreaResolution(wire);
 }
 
 export interface ResolveOutageAreasOptions {
   concurrency?: number;
+  maxIterations?: (task: AreaTask) => number;
   onResolve?: (info: ResolveTelemetry) => void;
 }
 
@@ -109,31 +115,32 @@ async function resolveOutageAreas(
   );
   const { onResolve } = opts;
 
-  const outcomes: AreaResolutionOutcome[] = new Array(tasks.length);
+  const results: AreaResolutionOutcome[] = [];
   let cursor = 0;
 
   async function worker() {
     while (cursor < tasks.length) {
       const index = cursor++;
       const task = tasks[index];
+      const maxTurns = opts.maxIterations?.(task) ?? DEFAULT_MAX_ITERATIONS;
 
       let resolution: AreaResolution;
       try {
-        resolution = await resolveSingle(task);
+        resolution = await resolveSingle(task, maxTurns);
       } catch (error) {
         console.error(
           `[beneco-area] failed to resolve ${task.kind}/${task.outageId}:`,
           error,
         );
-        resolution = { municipalities: [], unresolved: [] };
+        continue;
       }
 
-      outcomes[index] = {
+      results.push({
         ...resolution,
         key: task.key,
         kind: task.kind,
         outageId: task.outageId,
-      };
+      });
       onResolve?.({
         outageId: task.outageId,
         kind: task.kind,
@@ -147,7 +154,7 @@ async function resolveOutageAreas(
     Array.from({ length: Math.min(concurrency, tasks.length) }, () => worker()),
   );
 
-  return outcomes;
+  return results;
 }
 
 function tasksFromOutageFeed(feed: OutageFeed): AreaTask[] {
