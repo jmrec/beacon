@@ -1,4 +1,4 @@
-import { Layers, Loader2, Map as MapIcon, Settings2 } from "lucide-react";
+import { Layers, Map as MapIcon, Settings2 } from "lucide-react";
 import type { Map as MapLibreMap } from "maplibre-gl";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -8,6 +8,20 @@ import {
   aggregateAffectedCounts,
 } from "../lib/area-overlay";
 import type { AreaResolutionOutcome } from "../lib/beneco-area/types/internal.ts";
+import { Button } from "./ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
+import { Skeleton } from "./ui/skeleton";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "./ui/tooltip";
 
 const LEVELS = ["barangay", "city", "province"] as const;
 
@@ -361,45 +375,68 @@ export default function OutageMap({
     <div className="relative h-full w-full overflow-hidden bg-slate-950">
       <div ref={containerRef} className="absolute inset-0 h-full w-full" />
 
-      <div className="absolute right-2 top-3 z-10 flex flex-col gap-1.5">
-        <button
-          type="button"
-          onClick={() => setShowBaseMap((v) => !v)}
-          title={showBaseMap ? "Hide Base Map" : "Show Base Map"}
-          className="rounded-lg border border-slate-700/50 bg-slate-900/90 p-2 text-slate-200 shadow-lg backdrop-blur-sm transition hover:bg-slate-800"
-        >
-          <MapIcon className="size-4" />
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowBoundaries((v) => !v)}
-          title={showBoundaries ? "Hide Boundaries" : "Show Boundaries"}
-          className="rounded-lg border border-slate-700/50 bg-slate-900/90 p-2 text-slate-200 shadow-lg backdrop-blur-sm transition hover:bg-slate-800"
-        >
-          <Layers className="size-4" />
-        </button>
-        <details className="relative">
-          <summary className="flex list-none cursor-pointer rounded-lg border border-slate-700/50 bg-slate-900/90 p-2 text-slate-200 shadow-lg backdrop-blur-sm transition hover:bg-slate-800">
-            <Settings2 className="size-4" />
-          </summary>
-          <div className="absolute right-0 mt-1 flex w-40 flex-col rounded-lg border border-slate-700/50 bg-slate-900/90 p-1 text-xs text-slate-200 shadow-lg backdrop-blur-sm">
-            {LEVELS.map((level) => (
-              <button
-                key={level}
+      <TooltipProvider delayDuration={200}>
+        <div className="absolute right-2 top-3 z-10 flex flex-col gap-1.5">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
                 type="button"
-                onClick={() => setActiveLevel(level)}
-                className={`rounded-md px-3 py-1.5 text-left transition hover:bg-slate-800 ${
-                  activeLevel === level
-                    ? "bg-slate-800 font-semibold text-white"
-                    : "text-slate-400"
-                }`}
+                variant="secondary"
+                size="icon"
+                aria-label={showBaseMap ? "Hide base map" : "Show base map"}
+                onClick={() => setShowBaseMap((v) => !v)}
               >
-                {LEVEL_LABELS[level]}
-              </button>
-            ))}
-          </div>
-        </details>
-      </div>
+                <MapIcon />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left">
+              {showBaseMap ? "Hide base map" : "Show base map"}
+            </TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon"
+                aria-label={
+                  showBoundaries ? "Hide boundaries" : "Show boundaries"
+                }
+                onClick={() => setShowBoundaries((v) => !v)}
+              >
+                <Layers />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left">
+              {showBoundaries ? "Hide boundaries" : "Show boundaries"}
+            </TooltipContent>
+          </Tooltip>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="secondary"
+                size="icon"
+                aria-label="Choose admin level"
+              >
+                <Settings2 />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-40">
+              {LEVELS.map((level) => (
+                <DropdownMenuItem
+                  key={level}
+                  onSelect={() => setActiveLevel(level)}
+                >
+                  {LEVEL_LABELS[level]}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </TooltipProvider>
 
       {labels && hoveredInfo && (
         <div
@@ -424,11 +461,9 @@ export default function OutageMap({
       )}
 
       {isLoading && (
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950/80 text-blue-200 backdrop-blur-sm">
-          <Loader2 className="mb-4 size-10 animate-spin" />
-          <p className="font-mono text-xs uppercase tracking-[0.2em]">
-            Initializing Map
-          </p>
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-background/70 backdrop-blur-sm">
+          <Skeleton className="size-12 rounded-full" />
+          <Skeleton className="h-4 w-44" />
         </div>
       )}
     </div>
