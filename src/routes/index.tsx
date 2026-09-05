@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect } from "react";
 import OutageMap from "../components/OutageMap";
-import { getResolvedOutageAreas } from "../lib/resolvedOutageAreas";
+import { getResolvedOutageAreas } from "../lib/beneco-area";
 
 export const Route = createFileRoute("/")({
   loader: async () => ({

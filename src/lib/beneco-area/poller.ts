@@ -1,11 +1,11 @@
-import type { OutagePeriod } from "../beneco.ts";
-import { fetchOutageFeed, fetchUnscheduledFeed } from "../beneco.ts";
 import {
   type AreaResolutionCache,
   InMemoryAreaResolutionCache,
   pruneCache,
 } from "./cache.ts";
+import { fetchScheduledFeed, fetchUnscheduledFeed } from "./feed.ts";
 import { resolveOutageAreas, tasksFromOutageFeed } from "./resolver.ts";
+import type { OutagePeriod } from "./types/api.ts";
 import type { AreaResolutionOutcome } from "./types/internal.ts";
 
 const DEFAULT_UNSCHEDULED_INTERVAL_MS = 60_000;
@@ -99,12 +99,11 @@ export function createPoller(opts: PollerOptions = {}): Poller {
 
   async function pollScheduledOnce(): Promise<PollRun> {
     const startedAt = Date.now();
-    const feed = await fetchOutageFeed(period);
-    const tasks = tasksFromOutageFeed({ scheduled: feed.scheduled });
+    const scheduled = await fetchScheduledFeed(period);
+    const tasks = tasksFromOutageFeed({ scheduled });
     const stats = await runResolve(tasks);
     const live = new Set<number>([
-      ...feed.unscheduled.map((o) => o.id),
-      ...feed.scheduled.map((o) => o.id),
+      ...scheduled.map((o) => o.id),
     ]);
     pruneCache(cache, live);
     return finish("scheduled", stats, startedAt);

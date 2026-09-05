@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createServerFn } from "@tanstack/react-start";
-import type { AreaResolutionOutcome } from "./beneco-area/types/internal.ts";
+import type { AreaResolutionOutcome } from "./types/internal.ts";
 
 export const getResolvedOutageAreas = createServerFn({ method: "GET" }).handler(
   async (): Promise<AreaResolutionOutcome[]> => {

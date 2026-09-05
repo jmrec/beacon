@@ -17,7 +17,8 @@ import {
   Zap,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { getOutages, type OutageFeed, type OutagePeriod } from "../lib/beneco";
+import { getOutages } from "../lib/beneco-area/feed";
+import type { OutageFeed, OutagePeriod } from "../lib/beneco-area/types/api";
 import { Badge } from "./ui/badge";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
