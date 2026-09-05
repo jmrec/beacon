@@ -13,7 +13,7 @@ export const llmEnv = createEnv({
     LLM_MODEL: z.string().optional(),
     LLM_API_KEY: z.string().optional(),
   },
-  runtimeEnv: process.env,
+  runtimeEnv: { ...process.env, ...import.meta.env },
   emptyStringAsUndefined: true,
 });
 

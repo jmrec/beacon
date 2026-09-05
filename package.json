@@ -21,6 +21,7 @@
     "db:studio": "drizzle-kit studio",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
+    "resolve:areas": "tsx --env-file=.env.local scripts/test-area-resolver.ts",
     "tree": "pnpx file-tree-cli ."
   },
   "dependencies": {
