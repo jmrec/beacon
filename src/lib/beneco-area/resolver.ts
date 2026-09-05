@@ -1,7 +1,7 @@
 import { chat, maxIterations } from "@tanstack/ai";
-import { geminiText } from "@tanstack/ai-gemini";
 import { createServerFn } from "@tanstack/react-start";
 import { type AreaResolutionCache, fingerprintText } from "./cache.ts";
+import { createLlmAdapter } from "./llm.ts";
 import { areaResolverTools } from "./tools.ts";
 import type { OutageFeed } from "./types/api.ts";
 import {
@@ -11,24 +11,6 @@ import {
   parseAreaResolution,
 } from "./types/internal.ts";
 import { AreaResolutionWireSchema } from "./types/llm.ts";
-
-const DEFAULT_MODEL = "gemini-3.5-flash-lite";
-
-type GeminiModel = Parameters<typeof geminiText>[0];
-
-function modelName(): GeminiModel {
-  return (process.env.BENECO_AREA_MODEL?.trim() ||
-    DEFAULT_MODEL) as GeminiModel;
-}
-
-function requireApiKey(): void {
-  const key = process.env.GOOGLE_API_KEY ?? process.env.GEMINI_API_KEY;
-  if (!key) {
-    throw new Error(
-      "beneco-area resolver: missing Gemini API key. Set GOOGLE_API_KEY (or GEMINI_API_KEY) in your environment.",
-    );
-  }
-}
 
 const SYSTEM_PROMPT = `You resolve power-outage "affected area" descriptions into the affected municipalities and barangays, grounded in a BENECO reference dataset.
 
@@ -95,9 +77,8 @@ function buildUserMessage(task: AreaTask): string {
 }
 
 async function resolveSingle(task: AreaTask): Promise<AreaResolution> {
-  requireApiKey();
   const wire = await chat({
-    adapter: geminiText(modelName()),
+    adapter: createLlmAdapter(),
     systemPrompts: [SYSTEM_PROMPT],
     messages: [{ role: "user", content: buildUserMessage(task) }],
     tools: areaResolverTools,
