@@ -30,6 +30,6 @@ export interface ScheduledOutage {
 }
 
 export interface OutageFeed {
-  unscheduled: UnscheduledOutage[];
-  scheduled: ScheduledOutage[];
+  unscheduled?: UnscheduledOutage[];
+  scheduled?: ScheduledOutage[];
 }

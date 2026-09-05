@@ -2,6 +2,7 @@ import { chat, maxIterations } from "@tanstack/ai";
 import { geminiText } from "@tanstack/ai-gemini";
 import { createServerFn } from "@tanstack/react-start";
 import { areaResolverTools } from "./tools.ts";
+import type { OutageFeed } from "./types/api.ts";
 import {
   type AreaResolution,
   type AreaResolutionOutcome,
@@ -151,10 +152,7 @@ const resolveOutageAreasFn = createServerFn({ method: "POST" })
   })
   .handler(async ({ data }) => resolveOutageAreas(data));
 
-function tasksFromOutageFeed(feed: {
-  unscheduled?: Array<{ id: number; area: string; feeder?: string }>;
-  scheduled?: Array<{ id: number; areas: string; feeder?: string }>;
-}): AreaTask[] {
+function tasksFromOutageFeed(feed: OutageFeed): AreaTask[] {
   const unscheduled: AreaTask[] | undefined = feed.unscheduled?.map((o) => ({
     key: `u-${o.id}`,
     kind: "unscheduled",
