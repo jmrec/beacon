@@ -5,9 +5,11 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { env } from "../env";
 import {
   type AreaOverlayCounts,
+  type AreaOverlayOutage,
   aggregateAffectedCounts,
+  type PcodeTally,
+  tallyColor,
 } from "../lib/area-overlay";
-import type { AreaResolutionOutcome } from "../lib/beneco-area/types/internal.ts";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
@@ -107,22 +109,16 @@ function updateBoundaryVisibility(
   }
 }
 
-type CountMap = Map<string, number>;
+type CountMap = Map<string, PcodeTally>;
 
-function severityColor(count: number): string {
-  if (count >= 3) return "#ef4444"; // red-500
-  if (count === 2) return "#eab308"; // yellow-500
-  return "#22c55e"; // green-500
-}
-
-/** Map each affected pcode to a severity color; all others transparent. */
 function buildColorExpression(
   counts: CountMap,
   pcodeKey: "adm3_pcode" | "adm4_pcode",
 ) {
   const expression: unknown[] = ["match", ["get", pcodeKey]];
-  for (const [pcode, count] of counts) {
-    expression.push(pcode, severityColor(count));
+  for (const [pcode, tally] of counts) {
+    const color = tallyColor(tally);
+    if (color) expression.push(pcode, color);
   }
   expression.push("rgba(0,0,0,0)");
   return expression;
@@ -192,7 +188,7 @@ function updateAreaOverlays(
 export default function OutageMap({
   resolvedAreas,
 }: {
-  resolvedAreas?: AreaResolutionOutcome[];
+  resolvedAreas?: AreaOverlayOutage[];
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);

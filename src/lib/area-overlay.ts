@@ -1,22 +1,46 @@
-import type { AreaResolution } from "./beneco-area/types/internal.ts";
+import type { AreaResolutionOutcome, Pcode } from "./beneco-area/types/internal.ts";
 
-/** Number of outages affecting each pcode, split by admin level. */
+export interface AreaOverlayOutage extends AreaResolutionOutcome {
+  ongoing: boolean;
+  resolvedRecently: boolean;
+}
+
+export interface PcodeTally {
+  ongoing: number;
+  resolvedRecently: number;
+}
+
 export interface AreaOverlayCounts {
-  city: Map<string, number>;
-  barangay: Map<string, number>;
+  city: Map<Pcode, PcodeTally>;
+  barangay: Map<Pcode, PcodeTally>;
+}
+
+function bump(
+  map: Map<Pcode, PcodeTally>,
+  pcode: Pcode,
+  key: keyof PcodeTally,
+) {
+  const entry = map.get(pcode) ?? { ongoing: 0, resolvedRecently: 0 };
+  entry[key] += 1;
+  map.set(pcode, entry);
 }
 
 export function aggregateAffectedCounts(
-  outages: readonly AreaResolution[],
+  outages: readonly AreaOverlayOutage[],
 ): AreaOverlayCounts {
-  const city = new Map<string, number>();
-  const barangay = new Map<string, number>();
-  const bump = (map: Map<string, number>, pcode: string) =>
-    map.set(pcode, (map.get(pcode) ?? 0) + 1);
+  const city = new Map<Pcode, PcodeTally>();
+  const barangay = new Map<Pcode, PcodeTally>();
 
   for (const outage of outages) {
-    const citySeen = new Set<string>();
-    const barangaySeen = new Set<string>();
+    const tallyKey: keyof PcodeTally | null = outage.ongoing
+      ? "ongoing"
+      : outage.resolvedRecently
+        ? "resolvedRecently"
+        : null;
+    if (tallyKey === null) continue;
+
+    const citySeen = new Set<Pcode>();
+    const barangaySeen = new Set<Pcode>();
 
     for (const mun of outage.municipalities) {
       const { kind } = mun.scope;
@@ -24,14 +48,30 @@ export function aggregateAffectedCounts(
         for (const b of mun.scope.barangays) {
           if (b.pcode) barangaySeen.add(b.pcode);
         }
-      } else if (kind === "whole" || kind === "partial" || kind === "excluded") {
+      } else if (
+        kind === "whole" ||
+        kind === "partial" ||
+        kind === "excluded"
+      ) {
         if (mun.pcode) citySeen.add(mun.pcode);
       }
     }
 
-    for (const pcode of citySeen) bump(city, pcode);
-    for (const pcode of barangaySeen) bump(barangay, pcode);
+    for (const pcode of citySeen) bump(city, pcode, tallyKey);
+    for (const pcode of barangaySeen) bump(barangay, pcode, tallyKey);
   }
 
   return { city, barangay };
 }
+
+export function tallyColor(tally: PcodeTally): string | null {
+  if (tally.ongoing > 0) {
+    return RED_SHADES[Math.min(tally.ongoing, RED_SHADES.length) - 1];
+  }
+  if (tally.resolvedRecently > 0) return GREEN;
+  return null;
+}
+
+const GREEN = "#22c55e";
+
+const RED_SHADES = ["#f87171", "#ef4444", "#dc2626", "#b91c1c"];

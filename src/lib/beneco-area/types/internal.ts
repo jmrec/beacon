@@ -9,6 +9,8 @@ import { AreaResolutionWireSchema } from "./llm";
 
 export type Confidence = "high" | "medium" | "low";
 
+export type Pcode = string;
+
 //
 // BARANGAY
 //
@@ -30,7 +32,7 @@ function toBarangayScope(wire: BarangayScopeWire): BarangayScope {
 export interface BarangayAffect {
   id: number;
   name: string;
-  pcode?: string;
+  pcode?: Pcode;
   confidence: Confidence;
   scope: BarangayScope;
 }
@@ -70,7 +72,7 @@ function toMunicipalityScope(wire: MunicipalityScopeWire): MunicipalityScope {
 export interface MunicipalityAffect {
   id: number;
   name: string;
-  pcode?: string;
+  pcode?: Pcode;
   confidence: Confidence;
   scope: MunicipalityScope;
 }

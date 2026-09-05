@@ -89,6 +89,7 @@
     "@vitest/browser-playwright": "latest",
     "@vitest/coverage-v8": "latest",
     "babel-plugin-react-compiler": "^1.0.0",
+    "date-fns": "^4.4.0",
     "dotenv": "^17.3.1",
     "file-tree-cli": "^0.0.2",
     "playwright": "latest",
