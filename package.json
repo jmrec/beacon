@@ -49,6 +49,7 @@
     "ag-grid-react": "^36.1.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "cn": "^0.2.4",
     "drizzle-kit": "^0.31.9",
     "drizzle-orm": "^0.45.1",
     "highlight.js": "^11.11.1",
