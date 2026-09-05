@@ -93,14 +93,14 @@ export function createPoller(opts: PollerOptions = {}): Poller {
   async function pollUnscheduledOnce(): Promise<PollRun> {
     const startedAt = Date.now();
     const unscheduled = await fetchUnscheduledFeed(period);
-    const tasks = tasksFromOutageFeed({ unscheduled });
+    const tasks = tasksFromOutageFeed({ unscheduled, scheduled: [] });
     return finish("unscheduled", await runResolve(tasks), startedAt);
   }
 
   async function pollScheduledOnce(): Promise<PollRun> {
     const startedAt = Date.now();
     const scheduled = await fetchScheduledFeed(period);
-    const tasks = tasksFromOutageFeed({ scheduled });
+    const tasks = tasksFromOutageFeed({ unscheduled: [], scheduled });
     const stats = await runResolve(tasks);
     const live = new Set<number>([
       ...scheduled.map((o) => o.id),
