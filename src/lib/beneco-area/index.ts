@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { createServerFn } from "@tanstack/react-start";
 import {
   type Duration,
@@ -8,16 +6,23 @@ import {
   startOfDay,
   sub,
 } from "date-fns";
-import type { AreaOverlayOutage } from "../area-overlay";
-import { fetchScheduledFeed, fetchUnscheduledFeed } from "./feed";
-import type { ScheduledOutage, UnscheduledOutage } from "./types/api";
+import type { AreaOverlayOutage } from "./area-overlay.ts";
+import { fetchScheduledFeed, fetchUnscheduledFeed } from "./feed.ts";
+import {
+  fingerprintText,
+  getResolvedOutageRows,
+  type ResolutionRow,
+  upsertResolvedOutageRows,
+} from "./repos/dedup.ts";
+import { resolveOutageAreas, tasksFromOutageFeed } from "./resolver.ts";
+import type { ScheduledOutage, UnscheduledOutage } from "./types/api.ts";
 import type { AreaResolutionOutcome } from "./types/internal.ts";
 
 type RecentlyResolvedWindow =
   | { mode: "sameDay" }
   | { mode: "within"; span: Duration };
 
-const DEFAULT_RECENTLY_RESOLVED_WINDOW: RecentlyResolvedWindow = {
+const RECENTLY_RESOLVED_WINDOW: RecentlyResolvedWindow = {
   mode: "sameDay",
 };
 const ZERO_DATE_PREFIX = "0000-00-00";
@@ -64,7 +69,7 @@ function classify(
         resolvedRecently: isRecentlyResolved(
           toDate(item.timerestored),
           now,
-          DEFAULT_RECENTLY_RESOLVED_WINDOW,
+          RECENTLY_RESOLVED_WINDOW,
         ),
       };
     }
@@ -84,33 +89,102 @@ function classify(
         resolvedRecently: isRecentlyResolved(
           ongoing ? null : end,
           now,
-          DEFAULT_RECENTLY_RESOLVED_WINDOW,
+          RECENTLY_RESOLVED_WINDOW,
         ),
       };
-    } 
+    }
   }
 }
 
 export const getResolvedOutageAreas = createServerFn({ method: "GET" }).handler(
   async (): Promise<AreaOverlayOutage[]> => {
-    const raw = readFileSync(
-      resolve("src/data/resolved_outage_areas.json"),
-      "utf8",
-    );
-    const outcomes = JSON.parse(raw) as AreaResolutionOutcome[];
-
     const [unscheduled, scheduled] = await Promise.all([
       fetchUnscheduledFeed("today"),
       fetchScheduledFeed("today"),
     ]).catch(() => [[], []]);
 
+    const tasks = tasksFromOutageFeed({ unscheduled, scheduled });
+    if (tasks.length === 0) return [];
+
+    const fingerprintByOutage = new Map(
+      tasks.map((task) => [task.outageId, fingerprintText(task.text)]),
+    );
+    const liveIds = tasks.map((task) => task.outageId);
+
+    let stored: ResolutionRow[] = [];
+    try {
+      stored = await getResolvedOutageRows(liveIds);
+    } catch (error) {
+      console.error("[beneco-area] durable store read failed:", error);
+      return [];
+    }
+
+    const storedByOutage = new Map(stored.map((row) => [row.outageId, row]));
+
+    const needResolve = tasks.filter((task) => {
+      const row = storedByOutage.get(task.outageId);
+      return (
+        !row ||
+        row.kind !== task.kind ||
+        row.fingerprint !== fingerprintByOutage.get(task.outageId)
+      );
+    });
+
+    if (needResolve.length > 0) {
+      const fresh = await resolveOutageAreas(needResolve, { concurrency: 3 });
+      try {
+        await upsertResolvedOutageRows(
+          fresh.map((outcome) => ({
+            outageId: outcome.outageId,
+            kind: outcome.kind,
+            key: outcome.key,
+            fingerprint: fingerprintByOutage.get(outcome.outageId) ?? "",
+            resolution: {
+              municipalities: outcome.municipalities,
+              unresolved: outcome.unresolved,
+            },
+          })),
+        );
+      } catch (error) {
+        console.error("[beneco-area] durable store write failed:", error);
+        return [];
+      }
+
+      for (const outcome of fresh) {
+        storedByOutage.set(outcome.outageId, {
+          outageId: outcome.outageId,
+          kind: outcome.kind,
+          key: outcome.key,
+          fingerprint: fingerprintByOutage.get(outcome.outageId) ?? "",
+          resolution: {
+            municipalities: outcome.municipalities,
+            unresolved: outcome.unresolved,
+          },
+          resolvedAt: new Date(),
+        });
+      }
+    }
+
     const unscheduledById = new Map(unscheduled.map((o) => [o.id, o]));
     const scheduledById = new Map(scheduled.map((o) => [o.id, o]));
     const now = new Date();
 
-    return outcomes.map((outcome) => ({
-      ...outcome,
-      ...classify(outcome, unscheduledById, scheduledById, now),
-    }));
+    const results: AreaOverlayOutage[] = [];
+    for (const task of tasks) {
+      const row = storedByOutage.get(task.outageId);
+      if (!row) continue;
+      const outcome: AreaResolutionOutcome = {
+        key: task.key,
+        kind: task.kind,
+        outageId: task.outageId,
+        municipalities: row.resolution.municipalities,
+        unresolved: row.resolution.unresolved,
+      };
+      results.push({
+        ...outcome,
+        ...classify(outcome, unscheduledById, scheduledById, now),
+      });
+    }
+    return results;
   },
 );

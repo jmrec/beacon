@@ -9,7 +9,7 @@ import {
   aggregateAffectedCounts,
   type PcodeTally,
   tallyColor,
-} from "../lib/area-overlay";
+} from "../lib/beneco-area/area-overlay";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,

@@ -1,6 +1,5 @@
 import { chat, maxIterations } from "@tanstack/ai";
-import { createServerFn } from "@tanstack/react-start";
-import { type AreaResolutionCache, fingerprintText } from "./cache.ts";
+import { env } from "../../env.ts";
 import { createLlmAdapter } from "./llm.ts";
 import { areaResolverTools } from "./tools.ts";
 import type { OutageFeed } from "./types/api.ts";
@@ -90,66 +89,25 @@ async function resolveSingle(task: AreaTask): Promise<AreaResolution> {
 
 export interface ResolveOutageAreasOptions {
   concurrency?: number;
-  cache?: AreaResolutionCache;
   onResolve?: (info: ResolveTelemetry) => void;
 }
 
 export interface ResolveTelemetry {
-  outageId: number;
+  outageId: AreaTask["outageId"];
   kind: AreaTask["kind"];
-  ranAgent: boolean;
   municipalities: number;
   unresolved: number;
-}
-
-async function resolveOne(
-  task: AreaTask,
-  cache: AreaResolutionCache | undefined,
-): Promise<AreaResolution> {
-  const fingerprint = fingerprintText(task.text);
-
-  if (cache) {
-    const hit = cache.get(task.outageId);
-    if (hit && hit.fingerprint === fingerprint) {
-      return hit.resolution;
-    }
-  }
-
-  let resolution: AreaResolution;
-  try {
-    resolution = await resolveSingle(task);
-  } catch (error) {
-    console.error(
-      `[beneco-area] failed to resolve ${task.kind}/${task.outageId}:`,
-      error,
-    );
-    return { municipalities: [], unresolved: [] };
-  }
-
-  cache?.set({
-    outageId: task.outageId,
-    kind: task.kind,
-    fingerprint,
-    resolution,
-    updatedAt: Date.now(),
-  });
-
-  return resolution;
 }
 
 async function resolveOutageAreas(
   tasks: AreaTask[],
   opts: ResolveOutageAreasOptions = {},
 ): Promise<AreaResolutionOutcome[]> {
-  const configured = Number(process.env.BENECO_AREA_CONCURRENCY);
   const concurrency = Math.max(
     1,
-    Math.min(
-      opts.concurrency ?? (Number.isFinite(configured) ? configured : 3),
-      8,
-    ),
+    Math.min(opts.concurrency ?? env.BENECO_AREA_CONCURRENCY ?? 3, 8),
   );
-  const { cache, onResolve } = opts;
+  const { onResolve } = opts;
 
   const outcomes: AreaResolutionOutcome[] = new Array(tasks.length);
   let cursor = 0;
@@ -158,10 +116,18 @@ async function resolveOutageAreas(
     while (cursor < tasks.length) {
       const index = cursor++;
       const task = tasks[index];
-      const fingerprint = fingerprintText(task.text);
-      const hit = cache?.get(task.outageId);
-      const ranAgent = !(hit && hit.fingerprint === fingerprint);
-      const resolution = await resolveOne(task, cache);
+
+      let resolution: AreaResolution;
+      try {
+        resolution = await resolveSingle(task);
+      } catch (error) {
+        console.error(
+          `[beneco-area] failed to resolve ${task.kind}/${task.outageId}:`,
+          error,
+        );
+        resolution = { municipalities: [], unresolved: [] };
+      }
+
       outcomes[index] = {
         ...resolution,
         key: task.key,
@@ -171,7 +137,6 @@ async function resolveOutageAreas(
       onResolve?.({
         outageId: task.outageId,
         kind: task.kind,
-        ranAgent,
         municipalities: resolution.municipalities.length,
         unresolved: resolution.unresolved.length,
       });
@@ -184,15 +149,6 @@ async function resolveOutageAreas(
 
   return outcomes;
 }
-
-const resolveOutageAreasFn = createServerFn({ method: "POST" })
-  .validator((data: unknown): AreaTask[] => {
-    if (!Array.isArray(data)) {
-      throw new Error("resolveOutageAreas expects an array of area tasks");
-    }
-    return data as AreaTask[];
-  })
-  .handler(async ({ data }) => resolveOutageAreas(data));
 
 function tasksFromOutageFeed(feed: OutageFeed): AreaTask[] {
   const unscheduled: AreaTask[] | undefined = feed.unscheduled?.map((o) => ({
@@ -212,4 +168,4 @@ function tasksFromOutageFeed(feed: OutageFeed): AreaTask[] {
   return [...(unscheduled || []), ...(scheduled || [])];
 }
 
-export { resolveOutageAreas, resolveOutageAreasFn, tasksFromOutageFeed };
+export { resolveOutageAreas, tasksFromOutageFeed };
