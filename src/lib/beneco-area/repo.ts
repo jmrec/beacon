@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { drizzle, type NeonHttpDatabase } from "drizzle-orm/neon-http";
 
 import { getClient } from "../../db.ts";
@@ -17,11 +17,6 @@ interface Barangay {
 
   /** Philippine barangay geographic code, when present (nullable in source). */
   pcode: string | null;
-}
-
-interface BarangayMatch extends Barangay {
-  /** Normalised 0..1 relevance of the name against the search query. */
-  score: number;
 }
 
 type BenecoSchema = {
@@ -115,77 +110,9 @@ async function barangaysForMunicipality(
     .orderBy(barangays.name);
 }
 
-async function searchBarangays(opts: {
-  query: string;
-  municipalityId?: number;
-  limit?: number;
-}): Promise<BarangayMatch[]> {
-  const db = await getDb();
-  if (!db) return [];
-  const q = opts.query.trim().toLowerCase();
-  if (!q) return [];
-  const limit = Math.max(1, Math.min(opts.limit ?? 8, 20));
-
-  const score = sql<number>`
-    greatest(
-      coalesce(similarity(lower(${barangays.name}), ${q}), 0),
-      coalesce(word_similarity(${q}, lower(${barangays.name})), 0)
-    )`;
-
-  const conditions = [gte(score, 0.25)];
-  if (opts.municipalityId != null) {
-    conditions.push(eq(barangays.municipalityId, opts.municipalityId));
-  }
-
-  return await db
-    .select({
-      id: barangays.id,
-      name: barangays.name,
-      pcode: barangays.pcode,
-      municipality: municipalities.name,
-      municipalityId: municipalities.id,
-      score,
-    })
-    .from(barangays)
-    .innerJoin(municipalities, eq(municipalities.id, barangays.municipalityId))
-    .where(and(...conditions))
-    .orderBy(desc(score), barangays.name)
-    .limit(limit);
-}
-
-interface BarangayNameMatch {
-  /** The original name token the model asked about. */
-  input: string;
-  /** Best fuzzy match, or null when nothing cleared the similarity bar. */
-  match: BarangayMatch | null;
-}
-
-async function fuzzyMatchBarangays(opts: {
-  names: string[];
-  municipalityId?: number;
-}): Promise<BarangayNameMatch[]> {
-  const out: BarangayNameMatch[] = [];
-  for (const input of opts.names) {
-    const q = input.trim().toLowerCase();
-    if (!q) {
-      out.push({ input, match: null });
-      continue;
-    }
-    const best = await searchBarangays({
-      query: q,
-      municipalityId: opts.municipalityId,
-      limit: 1,
-    });
-    out.push({ input, match: best[0] ?? null });
-  }
-  return out;
-}
-
 export {
   listMunicipalities,
   findMunicipality,
   suggestMunicipalities,
   barangaysForMunicipality,
-  searchBarangays,
-  fuzzyMatchBarangays,
 };

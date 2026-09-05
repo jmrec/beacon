@@ -1,6 +1,7 @@
 import { chat, maxIterations } from "@tanstack/ai";
 import { geminiText } from "@tanstack/ai-gemini";
 import { createServerFn } from "@tanstack/react-start";
+import { type AreaResolutionCache, fingerprintText } from "./cache.ts";
 import { areaResolverTools } from "./tools.ts";
 import type { OutageFeed } from "./types/api.ts";
 import {
@@ -48,7 +49,7 @@ Inside a municipality scope of kind "excluded", the scope of each listed baranga
 Grounding with tools (keep it small — resolve municipality by municipality)
 - list_municipalities: call at most once, to confirm municipality names and ids.
 - list_barangays_in_municipality: for EACH municipality named in the text, call it ONCE to get that municipality's official barangay list, then pick the affected barangays from that returned list (prefer official spellings).
-- fuzzy_match_barangays: batch fuzzy lookup (pg_trgm). Use it ONCE per municipality, passing ALL tokens from the text that you could not match from the official list (loose spellings, sub-areas that may hide a barangay) as one array. It returns the best DB match per token or null; use the returned ids/names for matches, and treat null results as unresolved. Never call it more than once per municipality.
+- Map loose spellings and sub-areas to the CLOSEST official barangay name already returned by list_barangays_in_municipality for that municipality. Prefer an official name verbatim; only fall back to a close spelling when clearly needed. If a token has no plausibly close official barangay, treat it as unresolved (do not invent one).
 - Emit ONLY municipality/barangay ids returned by a tool. Never invent an id or name.
 - Copy each entity's pcode (Philippine code) from its tool result; omit pcode when the tool returned none.
 - Gather what you need quickly and then STOP calling tools. Never call a tool more than once for the same municipality, and never search individual place names.
@@ -106,18 +107,68 @@ async function resolveSingle(task: AreaTask): Promise<AreaResolution> {
   return parseAreaResolution(wire);
 }
 
+export interface ResolveOutageAreasOptions {
+  concurrency?: number;
+  cache?: AreaResolutionCache;
+  onResolve?: (info: ResolveTelemetry) => void;
+}
+
+export interface ResolveTelemetry {
+  outageId: number;
+  kind: AreaTask["kind"];
+  ranAgent: boolean;
+  municipalities: number;
+  unresolved: number;
+}
+
+async function resolveOne(
+  task: AreaTask,
+  cache: AreaResolutionCache | undefined,
+): Promise<AreaResolution> {
+  const fingerprint = fingerprintText(task.text);
+
+  if (cache) {
+    const hit = cache.get(task.outageId);
+    if (hit && hit.fingerprint === fingerprint) {
+      return hit.resolution;
+    }
+  }
+
+  let resolution: AreaResolution;
+  try {
+    resolution = await resolveSingle(task);
+  } catch (error) {
+    console.error(
+      `[beneco-area] failed to resolve ${task.kind}/${task.outageId}:`,
+      error,
+    );
+    return { municipalities: [], unresolved: [] };
+  }
+
+  cache?.set({
+    outageId: task.outageId,
+    kind: task.kind,
+    fingerprint,
+    resolution,
+    updatedAt: Date.now(),
+  });
+
+  return resolution;
+}
+
 async function resolveOutageAreas(
   tasks: AreaTask[],
-  opts?: { concurrency?: number },
+  opts: ResolveOutageAreasOptions = {},
 ): Promise<AreaResolutionOutcome[]> {
   const configured = Number(process.env.BENECO_AREA_CONCURRENCY);
   const concurrency = Math.max(
     1,
     Math.min(
-      opts?.concurrency ?? (Number.isFinite(configured) ? configured : 3),
+      opts.concurrency ?? (Number.isFinite(configured) ? configured : 3),
       8,
     ),
   );
+  const { cache, onResolve } = opts;
 
   const outcomes: AreaResolutionOutcome[] = new Array(tasks.length);
   let cursor = 0;
@@ -126,13 +177,23 @@ async function resolveOutageAreas(
     while (cursor < tasks.length) {
       const index = cursor++;
       const task = tasks[index];
-      const resolution = await resolveSingle(task);
+      const fingerprint = fingerprintText(task.text);
+      const hit = cache?.get(task.outageId);
+      const ranAgent = !(hit && hit.fingerprint === fingerprint);
+      const resolution = await resolveOne(task, cache);
       outcomes[index] = {
         ...resolution,
         key: task.key,
         kind: task.kind,
         outageId: task.outageId,
       };
+      onResolve?.({
+        outageId: task.outageId,
+        kind: task.kind,
+        ranAgent,
+        municipalities: resolution.municipalities.length,
+        unresolved: resolution.unresolved.length,
+      });
     }
   }
 

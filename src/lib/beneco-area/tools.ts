@@ -68,66 +68,7 @@ const barangaysInMunicipalityTool = barangaysInMunicipalityDef.server(
   },
 );
 
-const fuzzyMatchBarangaysDef = toolDefinition({
-  name: "fuzzy_match_barangays",
-  description:
-    "Fuzzy-match (pg_trgm) a list of barangay-like names in ONE call, optionally scoped to a municipality. Use it ONCE per municipality, passing ALL names from the text that you could not match from the official list (loose spellings, or sub-areas that may hide a barangay). Returns the best DB match (id/name/pcode) or null per input. Do not call it repeatedly.",
-  inputSchema: z.object({
-    names: z
-      .array(z.string())
-      .min(1)
-      .describe("Barangay-like names to resolve."),
-    municipalityName: z
-      .string()
-      .optional()
-      .describe("Scope the fuzzy match to this municipality when known."),
-  }),
-  outputSchema: z.object({
-    results: z.array(
-      z.object({
-        input: z.string(),
-        match: z
-          .object({
-            id: z.number(),
-            name: z.string(),
-            municipality: z.string(),
-            pcode: z.string().nullable(),
-            score: z.number(),
-          })
-          .nullable(),
-      }),
-    ),
-  }),
-});
-
-const fuzzyMatchBarangaysTool = fuzzyMatchBarangaysDef.server(async (args) => {
-  let municipalityId: number | undefined;
-  if (args.municipalityName) {
-    const mun = await repo.findMunicipality(args.municipalityName);
-    municipalityId = mun?.id;
-  }
-  const matches = await repo.fuzzyMatchBarangays({
-    names: args.names,
-    municipalityId,
-  });
-  return {
-    results: matches.map((m) => ({
-      input: m.input,
-      match: m.match
-        ? {
-            id: m.match.id,
-            name: m.match.name,
-            municipality: m.match.municipality,
-            pcode: m.match.pcode,
-            score: m.match.score,
-          }
-        : null,
-    })),
-  };
-});
-
 export const areaResolverTools = [
   listMunicipalitiesTool,
   barangaysInMunicipalityTool,
-  fuzzyMatchBarangaysTool,
 ];
