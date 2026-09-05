@@ -1,21 +1,10 @@
-import { createEnv } from "@t3-oss/env-core";
 import { createGeminiChat } from "@tanstack/ai-gemini";
 import { openaiCompatibleText } from "@tanstack/ai-openai/compatible";
-import { z } from "zod";
+import { llmEnv } from "../../env-llm.ts";
 
 const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
 const DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash";
 const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
-
-export const llmEnv = createEnv({
-  server: {
-    LLM_PROVIDER: z.enum(["gemini", "deepseek"]).default("gemini"),
-    LLM_MODEL: z.string().optional(),
-    LLM_API_KEY: z.string().optional(),
-  },
-  runtimeEnv: { ...process.env, ...import.meta.env },
-  emptyStringAsUndefined: true,
-});
 
 type LlmProvider = (typeof llmEnv)["LLM_PROVIDER"];
 

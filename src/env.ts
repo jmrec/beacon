@@ -6,6 +6,7 @@ export const env = createEnv({
     SERVER_URL: z.url().optional(),
     BENECO_UNSCHEDULED_OUTAGE_URL: z.url().optional(),
     BENECO_SCHEDULED_OUTAGE_URL: z.url().optional(),
+    BENECO_AREA_CONCURRENCY: z.coerce.number().int().min(1).max(8).optional(),
   },
 
   clientPrefix: "VITE_",
@@ -17,7 +18,10 @@ export const env = createEnv({
       .default("https://ph-boundaries.jmrecondo.com/benguet"),
   },
 
-  runtimeEnv: import.meta.env,
+  runtimeEnv: {
+    ...import.meta.env,
+    ...(typeof process === "undefined" ? {} : process.env),
+  },
 
   emptyStringAsUndefined: true,
 });
