@@ -1,35 +1,20 @@
 import { eq, sql } from "drizzle-orm";
 import { drizzle, type NeonHttpDatabase } from "drizzle-orm/neon-http";
 
-import { getClient } from "../../db.ts";
-import { barangays, municipalities } from "./schema.ts";
+import { getClient } from "../../../db.ts";
+import { barangays, municipalities } from "../schemas/beneco.ts";
 
-interface Municipality {
-  id: number;
-  name: string;
-}
-
-interface Barangay {
-  id: number;
-  name: string;
-  municipality: string;
-  municipalityId: number;
-
-  /** Philippine barangay geographic code, when present (nullable in source). */
-  pcode: string | null;
-}
-
-type BenecoSchema = {
-  municipalities: typeof municipalities;
-  barangays: typeof barangays;
-};
+const benecoSchema = { municipalities, barangays } as const;
+type BenecoSchema = typeof benecoSchema;
+type Municipality = Pick<typeof municipalities.$inferSelect, "id" | "name">;
+type Barangay = typeof barangays.$inferSelect & { municipality: string };
 
 let db: NeonHttpDatabase<BenecoSchema> | undefined;
 
 async function getDb(): Promise<NeonHttpDatabase<BenecoSchema> | undefined> {
   const client = await getClient();
   if (!client) return undefined;
-  db ??= drizzle(client, { schema: { municipalities, barangays } });
+  db ??= drizzle(client, { schema: benecoSchema });
   return db;
 }
 

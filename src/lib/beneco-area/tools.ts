@@ -1,6 +1,6 @@
 import { toolDefinition } from "@tanstack/ai";
 import { z } from "zod";
-import * as repo from "./repo.ts";
+import * as repo from "./repos/beneco"
 
 const listMunicipalitiesDef = toolDefinition({
   name: "list_municipalities",
