@@ -1,9 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
-import type {
-  OutageFeed,
-  OutagePeriod,
-  ScheduledOutage,
-  UnscheduledOutage,
+import {
+  type OutageFeed,
+  type OutagePeriod,
+  type ScheduledOutage,
+  scheduledFeedSchema,
+  type UnscheduledOutage,
+  unscheduledFeedSchema,
 } from "./types/api.ts";
 
 async function fetchFeed(url: string | undefined, period: OutagePeriod) {
@@ -18,19 +20,18 @@ async function fetchFeed(url: string | undefined, period: OutagePeriod) {
 export async function fetchUnscheduledFeed(
   period: OutagePeriod,
 ): Promise<UnscheduledOutage[]> {
-  return (await fetchFeed(
+  const raw = await fetchFeed(
     process.env.BENECO_UNSCHEDULED_OUTAGE_URL,
     period,
-  )) satisfies UnscheduledOutage[];
+  );
+  return unscheduledFeedSchema.parse(raw);
 }
 
 export async function fetchScheduledFeed(
   period: OutagePeriod,
 ): Promise<ScheduledOutage[]> {
-  return (await fetchFeed(
-    process.env.BENECO_SCHEDULED_OUTAGE_URL,
-    period,
-  )) satisfies ScheduledOutage[];
+  const raw = await fetchFeed(process.env.BENECO_SCHEDULED_OUTAGE_URL, period);
+  return scheduledFeedSchema.parse(raw);
 }
 
 export const getOutages = createServerFn({ method: "GET" })
