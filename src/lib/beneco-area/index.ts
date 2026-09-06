@@ -1,12 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
-import {
-  type Duration,
-  isWithinInterval,
-  parseISO,
-  startOfDay,
-  sub,
-} from "date-fns";
-import { env } from "../../env.ts";
+import { isWithinInterval, parseISO, startOfDay, sub } from "date-fns";
+import { env, type RecentlyResolvedWindow } from "../../env.ts";
 import type { AreaOverlayOutage } from "./area-overlay.ts";
 import { fetchScheduledFeed, fetchUnscheduledFeed } from "./feed.ts";
 import {
@@ -15,25 +9,28 @@ import {
   type ResolutionRow,
   upsertResolvedOutageRows,
 } from "./repos/dedup.ts";
-import { resolveOutageAreas, tasksFromOutageFeed } from "./resolver.ts";
+import {
+  type ResolveTelemetry,
+  resolveOutageAreas,
+  tasksFromOutageFeed,
+} from "./resolver.ts";
 import type { ScheduledOutage, UnscheduledOutage } from "./types/api.ts";
-import type { AreaResolutionOutcome, AreaTask } from "./types/internal.ts";
+import type { AreaResolutionOutcome } from "./types/internal.ts";
 
-type RecentlyResolvedWindow =
-  | { mode: "sameDay" }
-  | { mode: "within"; span: Duration };
-
-const RECENTLY_RESOLVED_WINDOW: RecentlyResolvedWindow = {
-  mode: "sameDay",
-};
 const ZERO_DATE_PREFIX = "0000-00-00";
 
-function iterationBudget(task: AreaTask): number {
-  const period =
-    task.kind === "scheduled"
-      ? env.BENECO_SCHEDULED_PERIOD
-      : env.BENECO_UNSCHEDULED_PERIOD;
-  return period === "today" ? 10 : 24;
+async function appendResolveTelemetry(info: ResolveTelemetry): Promise<void> {
+  const file = env.BENECO_AREA_TELEMETRY_FILE;
+  if (!file) return;
+  try {
+    const fs = await import("node:fs");
+    fs.appendFileSync(
+      file,
+      `${JSON.stringify({ ...info, at: new Date().toISOString() })}\n`,
+    );
+  } catch (error) {
+    console.error("[beneco-area] telemetry write failed:", error);
+  }
 }
 
 function toDate(raw?: string): Date | null {
@@ -78,7 +75,7 @@ function classify(
         resolvedRecently: isRecentlyResolved(
           toDate(item.timerestored),
           now,
-          RECENTLY_RESOLVED_WINDOW,
+          env.BENECO_RECENTLY_RESOLVED_WINDOW,
         ),
       };
     }
@@ -98,7 +95,7 @@ function classify(
         resolvedRecently: isRecentlyResolved(
           ongoing ? null : end,
           now,
-          RECENTLY_RESOLVED_WINDOW,
+          env.BENECO_RECENTLY_RESOLVED_WINDOW,
         ),
       };
     }
@@ -142,7 +139,10 @@ export const getResolvedOutageAreas = createServerFn({ method: "GET" }).handler(
     if (needResolve.length > 0) {
       const fresh = await resolveOutageAreas(needResolve, {
         concurrency: 3,
-        maxIterations: iterationBudget,
+        maxIterations: 10,
+        onResolve: (info) => {
+          void appendResolveTelemetry(info);
+        },
       });
       try {
         await upsertResolvedOutageRows(
