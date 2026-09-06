@@ -15,9 +15,7 @@
   "onCreateCommand": "corepack enable && corepack prepare pnpm@12.1.0 --activate",
   "updateContentCommand": "sudo chown -R node:node /workspaces/beacon /home/node && pnpm install",
   "postCreateCommand": {
-    "git-gpg-format": "git config --global gpg.format ssh",
-    "git-signing-key": "git config --global user.signingkey /home/node/.ssh/id_ed25519_signing.pub",
-    "git-gpg-sign": "git config --global commit.gpgsign true"
+    "git-gpg-format": "git config --global gpg.format ssh"
   },
   "customizations": {
     "vscode": {
@@ -42,16 +40,6 @@
       "source": "beacon_beacon-node_modules",
       "target": "/workspaces/beacon/node_modules",
       "type": "volume"
-    },
-    {
-      "source": "${localEnv:HOME}/.ssh/id_ed25519.pub",
-      "target": "/home/node/.ssh/authorized_keys",
-      "type": "bind"
-    },
-    {
-      "source": "${localEnv:HOME}/.ssh/id_ed25519_signing.pub",
-      "target": "/home/node/.ssh/id_ed25519_signing.pub",
-      "type": "bind"
     }
   ],
   "forwardPorts": [3000, 6006, 4983],
