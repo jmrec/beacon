@@ -1,23 +1,42 @@
 import { Layers, Map as MapIcon, Settings2 } from "lucide-react";
-import type { Map as MapLibreMap } from "maplibre-gl";
+import type {
+  DataDrivenPropertyValueSpecification,
+  MapLayerMouseEvent,
+  Map as MapLibreMap,
+} from "maplibre-gl";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import "maplibre-gl/dist/maplibre-gl.css";
-import { env } from "../env";
+import type { Pcode } from "#/lib/beneco-area/types/internal.ts";
+import { env, type RecentlyResolvedWindow } from "../env";
 import {
   type AreaOverlayCounts,
   type AreaOverlayOutage,
+  type AreaOverlayPartial,
   aggregateAffectedCounts,
-  type PcodeTally,
+  aggregatePartial,
+  type CountMap,
   tallyColor,
 } from "../lib/beneco-area/area-overlay";
 import { Button } from "./ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-import { Skeleton } from "./ui/skeleton";
+import { MapControls, Map as MapView, useMap } from "./ui/map";
+import { Separator } from "./ui/separator";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "./ui/sheet";
 import {
   Tooltip,
   TooltipContent,
@@ -25,26 +44,64 @@ import {
   TooltipTrigger,
 } from "./ui/tooltip";
 
-const LEVELS = ["barangay", "city", "province"] as const;
+export const LEVEL_PCODE_MAP = {
+  barangay: "adm4_pcode",
+  city: "adm3_pcode",
+  province: "adm2_pcode",
+} as const;
 
-type AdminLevel = (typeof LEVELS)[number];
+export const LEVELS = [
+  {
+    id: "barangay",
+    pcodeKey: LEVEL_PCODE_MAP.barangay,
+    label: "Barangay",
+    color: "#088",
+  },
+  {
+    id: "city",
+    pcodeKey: LEVEL_PCODE_MAP.city,
+    label: "City/Mun.",
+    color: "#088",
+  },
+  {
+    id: "province",
+    pcodeKey: LEVEL_PCODE_MAP.province,
+    label: "Province",
+    color: "#088",
+  },
+] as const;
 
-const LEVEL_LABELS: Record<AdminLevel, string> = {
-  province: "Province",
-  city: "City/Mun.",
-  barangay: "Barangay",
-};
+export type AdminLevel = (typeof LEVELS)[number]["id"];
+export type PcodeKey = (typeof LEVELS)[number]["pcodeKey"];
 
-const LEVEL_COLORS: Record<AdminLevel, string> = {
-  province: "#d97706",
-  city: "#2563eb",
-  barangay: "#088",
+const MAP_ID = {
+  source: "benguet",
+  boundaryFill: (level: AdminLevel) => `${level}-boundary-fill`,
+  boundaryOutline: (level: AdminLevel) => `${level}-boundary-outline`,
+  outageFill: (level: AdminLevel) => `${level}-area-fill`,
+  selectOutline: (level: AdminLevel) => `${level}-select-outline`,
+} as const;
+
+const CUSTOM_LAYER_IDS = new Set(
+  LEVELS.flatMap((level) => [
+    MAP_ID.boundaryFill(level.id),
+    MAP_ID.boundaryOutline(level.id),
+    MAP_ID.outageFill(level.id),
+    MAP_ID.selectOutline(level.id),
+  ]),
+);
+
+const OVERLAY_OPACITY: Record<AdminLevel, number> = {
+  province: 0.35,
+  city: 0.45,
+  barangay: 0.6,
 };
 
 const CENTER: [number, number] = [120.594542, 16.410872];
 const INITIAL_ZOOM = 12;
 const MAX_ZOOM = 16;
-const STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
+const LIGHT_STYLE_URL = "https://tiles.openfreemap.org/styles/positron";
+const DARK_STYLE_URL = "https://tiles.openfreemap.org/styles/dark";
 const BENGUET_BOUNDS: [[number, number], [number, number]] = [
   [119.711151, 16.060331],
   [121.654358, 16.988502],
@@ -78,15 +135,32 @@ function tooltipLabels(props: Record<string, unknown>) {
   };
 }
 
+function resolvedWindowLabel(window: RecentlyResolvedWindow): string {
+  if (window.mode === "sameDay") return "Resolved today";
+  const units: Array<[string, number | undefined]> = [
+    ["year", window.span.years],
+    ["month", window.span.months],
+    ["week", window.span.weeks],
+    ["day", window.span.days],
+    ["hour", window.span.hours],
+    ["minute", window.span.minutes],
+    ["second", window.span.seconds],
+  ];
+  const parts: string[] = [];
+  for (const [name, n] of units) {
+    if (n && n > 0) parts.push(`${n} ${name}${n === 1 ? "" : "s"}`);
+  }
+  return parts.length === 0
+    ? "Recently resolved"
+    : `Resolved within the last ${parts.join(", ")}`;
+}
+
 function updateBaseMapVisibility(map: MapLibreMap, visible: boolean) {
   const style = map.getStyle();
-  if (!style?.layers) return;
   const visibility = visible ? "visible" : "none";
   for (const layer of style.layers) {
     const isCustomLayer =
-      LEVELS.some(
-        (l) => layer.id === `${l}-fill` || layer.id === `${l}-outline`,
-      ) || layer.id.includes("gl-draw");
+      CUSTOM_LAYER_IDS.has(layer.id) || layer.id.includes("gl-draw");
     if (!isCustomLayer) {
       map.setLayoutProperty(layer.id, "visibility", visibility);
     }
@@ -99,29 +173,99 @@ function updateBoundaryVisibility(
   visible: boolean,
 ) {
   for (const level of LEVELS) {
-    const v = visible && activeLevel === level ? "visible" : "none";
-    for (const suffix of ["fill", "outline"]) {
-      const id = `${level}-${suffix}`;
-      if (map.getLayer(id)) {
-        map.setLayoutProperty(id, "visibility", v);
-      }
+    const v = visible && activeLevel === level.id ? "visible" : "none";
+    for (const id of [
+      MAP_ID.boundaryFill(level.id),
+      MAP_ID.boundaryOutline(level.id),
+    ]) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", v);
     }
   }
 }
 
-type CountMap = Map<string, PcodeTally>;
-
+type FillColorSpec = DataDrivenPropertyValueSpecification<string>;
 function buildColorExpression(
   counts: CountMap,
-  pcodeKey: "adm3_pcode" | "adm4_pcode",
-) {
-  const expression: unknown[] = ["match", ["get", pcodeKey]];
+  pcodeKey: PcodeKey,
+): FillColorSpec {
+  const pairs: (string | string[])[] = [];
+
   for (const [pcode, tally] of counts) {
     const color = tallyColor(tally);
-    if (color) expression.push(pcode, color);
+    if (color) pairs.push(pcode, color);
   }
-  expression.push("rgba(0,0,0,0)");
-  return expression;
+  if (pairs.length === 0) return "rgba(0,0,0,0)";
+
+  const expression = ["match", ["get", pcodeKey], ...pairs, "rgba(0,0,0,0)"];
+  return expression as FillColorSpec;
+}
+
+const stripeImageCache = new Map<string, string>();
+function stripeImageFor(map: MapLibreMap, color: string): string {
+  const id = `stripe-${color.replace("#", "")}`;
+  if (map.hasImage(id)) return id;
+  const size = 24;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return id;
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, size, size);
+  ctx.strokeStyle = "rgba(0,0,0,0.35)";
+  ctx.lineWidth = 4;
+  for (let x = -size; x < size * 2; x += size / 2) {
+    ctx.beginPath();
+    ctx.moveTo(x, size);
+    ctx.lineTo(x + size, 0);
+    ctx.stroke();
+  }
+  map.addImage(id, ctx.getImageData(0, 0, size, size));
+  stripeImageCache.set(color, id);
+  return id;
+}
+
+function buildPatternExpression(
+  map: MapLibreMap,
+  counts: CountMap,
+  partial: Set<string>,
+  pcodeKey: PcodeKey,
+): FillColorSpec {
+  const pairs: (string | string[])[] = [];
+  for (const [pcode, tally] of counts) {
+    if (!partial.has(pcode)) continue;
+    const color = tallyColor(tally);
+    if (!color) continue;
+    pairs.push(pcode, stripeImageFor(map, color));
+  }
+  if (pairs.length === 0) return "";
+  const expression = ["match", ["get", pcodeKey], ...pairs, ""];
+  return expression as FillColorSpec;
+}
+
+function buildOpacityExpression(
+  counts: CountMap,
+  partial: Set<string>,
+  pcodeKey: PcodeKey,
+  level: AdminLevel,
+  hoveredPcode?: string | null,
+  selectedPcode?: string | null,
+): DataDrivenPropertyValueSpecification<number> {
+  const solid = OVERLAY_OPACITY[level];
+  const striped = solid * 0.5;
+  const pairs: (string | string[] | number)[] = [];
+  for (const pcode of counts.keys()) {
+    if (selectedPcode && pcode === selectedPcode) {
+      pairs.push(pcode, 0);
+    } else if (hoveredPcode && pcode === hoveredPcode) {
+      pairs.push(pcode, 0.9);
+    } else if (partial.has(pcode)) {
+      pairs.push(pcode, striped);
+    }
+  }
+  if (pairs.length === 0) return solid;
+  const expression = ["match", ["get", pcodeKey], ...pairs, solid];
+  return expression as DataDrivenPropertyValueSpecification<number>;
 }
 
 function applyOverlayLayer(
@@ -129,22 +273,23 @@ function applyOverlayLayer(
   id: string,
   sourceLayer: string,
   before: string,
-  pcodeKey: "adm3_pcode" | "adm4_pcode",
-  level: "city" | "barangay",
+  pcodeKey: PcodeKey,
+  level: AdminLevel,
   counts: CountMap,
   visible: boolean,
+  partial: Set<string>,
 ) {
   if (!map.getLayer(id)) {
     map.addLayer(
       {
         id,
         type: "fill",
-        source: "benguet",
+        source: MAP_ID.source,
         "source-layer": sourceLayer,
         layout: { visibility: "none" },
         paint: {
           "fill-color": "rgba(0,0,0,0)",
-          "fill-opacity": level === "city" ? 0.45 : 0.6,
+          "fill-opacity": OVERLAY_OPACITY[level],
         },
       },
       before,
@@ -154,201 +299,405 @@ function applyOverlayLayer(
   map.setPaintProperty(
     id,
     "fill-color",
-    buildColorExpression(counts, pcodeKey) as never,
+    buildColorExpression(counts, pcodeKey),
+  );
+  map.setPaintProperty(
+    id,
+    "fill-pattern",
+    buildPatternExpression(map, counts, partial, pcodeKey),
+  );
+  map.setPaintProperty(
+    id,
+    "fill-opacity",
+    buildOpacityExpression(counts, partial, pcodeKey, level),
   );
 }
 
 function updateAreaOverlays(
   map: MapLibreMap,
   counts: AreaOverlayCounts,
-  visible: boolean,
+  activeLevel: AdminLevel,
+  show: boolean,
+  partial: AreaOverlayPartial,
 ) {
-  applyOverlayLayer(
-    map,
-    "area-city-fill",
-    "city",
-    "city-outline",
-    "adm3_pcode",
-    "city",
-    counts.city,
-    visible,
+  for (const level of LEVELS) {
+    applyOverlayLayer(
+      map,
+      MAP_ID.outageFill(level.id),
+      level.id,
+      MAP_ID.boundaryOutline(level.id),
+      level.pcodeKey,
+      level.id,
+      counts[level.id],
+      show && activeLevel === level.id && counts[level.id].size > 0,
+      partial[level.id],
+    );
+  }
+}
+
+function setAreaOpacity(
+  map: MapLibreMap,
+  level: AdminLevel,
+  hoveredPcode: string | null,
+  selectedPcode: string | null,
+  counts: AreaOverlayCounts,
+  partial: AreaOverlayPartial,
+) {
+  const layerId = MAP_ID.outageFill(level);
+  const cfg = LEVELS.find((l) => l.id === level);
+  if (!cfg || !map.getLayer(layerId)) return;
+  map.setPaintProperty(
+    layerId,
+    "fill-opacity",
+    buildOpacityExpression(
+      counts[level],
+      partial[level],
+      cfg.pcodeKey,
+      level,
+      hoveredPcode,
+      selectedPcode,
+    ),
   );
-  applyOverlayLayer(
-    map,
-    "area-barangay-fill",
-    "barangay",
-    "barangay-outline",
-    "adm4_pcode",
-    "barangay",
-    counts.barangay,
-    visible,
+}
+
+const SELECT_COLOR = "#0f172a";
+const SELECT_DASH: number[] = [2, 2] as const;
+
+function ensureSelectOutline(map: MapLibreMap, level: AdminLevel) {
+  const cfg = LEVELS.find((l) => l.id === level);
+  if (!cfg) return;
+  const id = MAP_ID.selectOutline(cfg.id);
+  if (map.getLayer(id)) return id;
+  map.addLayer(
+    {
+      id,
+      type: "line",
+      source: MAP_ID.source,
+      "source-layer": cfg.id,
+      layout: { visibility: "none" },
+      paint: {
+        "line-color": "rgba(0,0,0,0)",
+        "line-width": 2.5,
+        "line-dasharray": SELECT_DASH,
+      },
+    },
+    MAP_ID.boundaryOutline(cfg.id),
   );
+  return id;
+}
+
+function setSelectOutline(
+  map: MapLibreMap,
+  level: AdminLevel,
+  selectedPcode: Pcode | null,
+) {
+  const cfg = LEVELS.find((l) => l.id === level);
+  if (!cfg) return;
+  const id = ensureSelectOutline(map, level);
+  if (!id || !selectedPcode) {
+    if (id && map.getLayer(id)) map.setLayoutProperty(id, "visibility", "none");
+    return;
+  }
+  map.setLayoutProperty(id, "visibility", "visible");
+  map.setPaintProperty(id, "line-color", [
+    "match",
+    ["get", cfg.pcodeKey],
+    selectedPcode,
+    SELECT_COLOR,
+    "rgba(0,0,0,0)",
+  ]);
+}
+
+function addBenguetSource(map: MapLibreMap) {
+  if (map.getSource(MAP_ID.source)) return;
+  map.addSource(MAP_ID.source, {
+    type: "vector",
+    url: env.VITE_TILE_SERVER_URL,
+    promoteId: LEVEL_PCODE_MAP,
+    encoding: "mlt",
+    maxzoom: MAX_ZOOM,
+  });
+}
+
+function addBoundaryLevels(map: MapLibreMap) {
+  for (const level of LEVELS) {
+    if (!map.getLayer(MAP_ID.boundaryFill(level.id))) {
+      map.addLayer({
+        id: MAP_ID.boundaryFill(level.id),
+        type: "fill",
+        source: MAP_ID.source,
+        "source-layer": level.id,
+        paint: { "fill-color": level.color, "fill-opacity": 0.1 },
+      });
+    }
+    if (!map.getLayer(MAP_ID.boundaryOutline(level.id))) {
+      map.addLayer({
+        id: MAP_ID.boundaryOutline(level.id),
+        type: "line",
+        source: MAP_ID.source,
+        "source-layer": level.id,
+        paint: { "line-color": level.color, "line-width": 1 },
+      });
+    }
+  }
+}
+
+function removeBoundaryLayers(map: MapLibreMap) {
+  for (const level of LEVELS) {
+    for (const id of [
+      MAP_ID.boundaryFill(level.id),
+      MAP_ID.boundaryOutline(level.id),
+      MAP_ID.outageFill(level.id),
+      MAP_ID.selectOutline(level.id),
+    ]) {
+      if (map.getLayer(id)) map.removeLayer(id);
+    }
+  }
+  if (map.getSource(MAP_ID.source)) map.removeSource(MAP_ID.source);
+}
+
+type RefreshArgs = {
+  activeLevel: AdminLevel;
+  showBaseMap: boolean;
+  showBoundaries: boolean;
+  counts: AreaOverlayCounts;
+  partial: AreaOverlayPartial;
+  hoveredPcode: Pcode | null;
+  selectedPcode: Pcode | null;
+};
+
+function refreshBoundaries(map: MapLibreMap, args: RefreshArgs) {
+  updateBaseMapVisibility(map, args.showBaseMap);
+  updateBoundaryVisibility(map, args.activeLevel, args.showBoundaries);
+  updateAreaOverlays(
+    map,
+    args.counts,
+    args.activeLevel,
+    args.showBoundaries,
+    args.partial,
+  );
+  setAreaOpacity(
+    map,
+    args.activeLevel,
+    args.hoveredPcode,
+    args.selectedPcode,
+    args.counts,
+    args.partial,
+  );
+  setSelectOutline(
+    map,
+    args.activeLevel,
+    args.showBoundaries ? args.selectedPcode : null,
+  );
+}
+
+type SelectedArea = {
+  level: AdminLevel;
+  pcode: Pcode;
+  props: Record<string, unknown>;
+};
+
+type BoundaryLayersProps = {
+  activeLevel: AdminLevel;
+  showBaseMap: boolean;
+  showBoundaries: boolean;
+  counts: AreaOverlayCounts;
+  partial: AreaOverlayPartial;
+  selected: SelectedArea | null;
+  onHover: (info: HoverInfo) => void;
+  onSelect: (sel: SelectedArea) => void;
+};
+
+function BoundaryLayers({
+  activeLevel,
+  showBaseMap,
+  showBoundaries,
+  counts,
+  partial,
+  selected,
+  onHover,
+  onSelect,
+}: BoundaryLayersProps) {
+  const { map, isLoaded } = useMap();
+
+  const activeLevelRef = useRef(activeLevel);
+  activeLevelRef.current = activeLevel;
+  const showBaseMapRef = useRef(showBaseMap);
+  showBaseMapRef.current = showBaseMap;
+  const showBoundariesRef = useRef(showBoundaries);
+  showBoundariesRef.current = showBoundaries;
+  const countsRef = useRef(counts);
+  countsRef.current = counts;
+  const partialRef = useRef(partial);
+  partialRef.current = partial;
+  const hoveredRef = useRef<string | null>(null);
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  const onHoverRef = useRef(onHover);
+  onHoverRef.current = onHover;
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+
+  useEffect(() => {
+    const m = map;
+    if (!m || !isLoaded) return;
+
+    addBenguetSource(m);
+    addBoundaryLevels(m);
+    refreshBoundaries(m, {
+      activeLevel: activeLevelRef.current,
+      showBaseMap: showBaseMapRef.current,
+      showBoundaries: showBoundariesRef.current,
+      counts: countsRef.current,
+      partial: partialRef.current,
+      hoveredPcode: hoveredRef.current,
+      selectedPcode:
+        selectedRef.current?.level === activeLevelRef.current
+          ? selectedRef.current.pcode
+          : null,
+    });
+
+    const moves: Array<[string, (e: MapLayerMouseEvent) => void]> = [];
+    const leaves: Array<[string, () => void]> = [];
+    const clicks: Array<[string, (e: MapLayerMouseEvent) => void]> = [];
+    for (const level of LEVELS) {
+      const id = MAP_ID.boundaryFill(level.id);
+      const move = (e: MapLayerMouseEvent) => {
+        const feature = e.features?.[0];
+        if (feature && activeLevelRef.current === level.id) {
+          m.getCanvas().style.cursor = "pointer";
+          onHoverRef.current({
+            x: e.point.x,
+            y: e.point.y,
+            props: (feature.properties ?? {}) as Record<string, unknown>,
+          });
+          const raw = feature.properties?.[level.pcodeKey];
+          if (raw != null) {
+            hoveredRef.current = String(raw);
+            const sel =
+              selectedRef.current?.level === level.id
+                ? selectedRef.current.pcode
+                : null;
+            setAreaOpacity(
+              m,
+              level.id,
+              hoveredRef.current,
+              sel,
+              countsRef.current,
+              partialRef.current,
+            );
+          }
+        }
+      };
+      const leave = () => {
+        m.getCanvas().style.cursor = "";
+        onHoverRef.current(null);
+        hoveredRef.current = null;
+        const sel =
+          selectedRef.current?.level === level.id
+            ? selectedRef.current.pcode
+            : null;
+        setAreaOpacity(
+          m,
+          level.id,
+          null,
+          sel,
+          countsRef.current,
+          partialRef.current,
+        );
+      };
+      const click = (e: MapLayerMouseEvent) => {
+        const feature = e.features?.[0];
+        if (feature && activeLevelRef.current === level.id) {
+          const raw = feature.properties?.[level.pcodeKey];
+          if (raw != null) {
+            onSelectRef.current({
+              level: level.id,
+              pcode: String(raw),
+              props: (feature.properties ?? {}) as Record<string, unknown>,
+            });
+          }
+        }
+      };
+      m.on("mousemove", id, move);
+      m.on("mouseleave", id, leave);
+      m.on("click", id, click);
+      moves.push([id, move]);
+      leaves.push([id, leave]);
+      clicks.push([id, click]);
+    }
+
+    return () => {
+      for (const [id, move] of moves) m.off("mousemove", id, move);
+      for (const [id, leave] of leaves) m.off("mouseleave", id, leave);
+      for (const [id, click] of clicks) m.off("click", id, click);
+      removeBoundaryLayers(m);
+    };
+  }, [map, isLoaded]);
+
+  useEffect(() => {
+    if (!map || !isLoaded || !map.getSource(MAP_ID.source)) return;
+    const sel =
+      selected && selected.level === activeLevel ? selected.pcode : null;
+    refreshBoundaries(map, {
+      activeLevel,
+      showBaseMap,
+      showBoundaries,
+      counts,
+      partial,
+      hoveredPcode: hoveredRef.current,
+      selectedPcode: sel,
+    });
+  }, [
+    map,
+    isLoaded,
+    activeLevel,
+    showBaseMap,
+    showBoundaries,
+    counts,
+    partial,
+    selected,
+  ]);
+
+  useEffect(() => {
+    const m = map;
+    if (!m || !isLoaded) return;
+    const container = m.getContainer();
+    const observer = new ResizeObserver(() => m.resize());
+    observer.observe(container);
+    m.resize();
+    return () => observer.disconnect();
+  }, [map, isLoaded]);
+
+  return null;
 }
 
 export default function OutageMap({
   resolvedAreas,
+  recentlyResolvedWindow,
 }: {
   resolvedAreas?: AreaOverlayOutage[];
+  recentlyResolvedWindow?: RecentlyResolvedWindow;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<MapLibreMap | null>(null);
-
-  const [isLoading, setIsLoading] = useState(true);
-  const [mapReady, setMapReady] = useState(false);
-  const [showBaseMap, setShowBaseMap] = useState(true);
+  const [showBaseMap, setShowBaseMap] = useState(false);
   const [showBoundaries, setShowBoundaries] = useState(true);
   const [activeLevel, setActiveLevel] = useState<AdminLevel>("barangay");
   const [hoveredInfo, setHoveredInfo] = useState<HoverInfo>(null);
+  const [selected, setSelected] = useState<SelectedArea | null>(null);
 
   const affectedCounts = useMemo(
     () => aggregateAffectedCounts(resolvedAreas ?? []),
     [resolvedAreas],
   );
+  const affectedPartial = useMemo(
+    () => aggregatePartial(resolvedAreas ?? []),
+    [resolvedAreas],
+  );
 
-  const activeLevelRef = useRef(activeLevel);
-  activeLevelRef.current = activeLevel;
-  const showBaseMapRef = useRef(showBaseMap);
-  const showBoundariesRef = useRef(showBoundaries);
   const popupRef = useRef<HTMLDivElement>(null);
   const popupWidthRef = useRef(0);
   const [popupSide, setPopupSide] = useState<"left" | "right">("right");
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    let disposed = false;
-    let map: MapLibreMap | null = null;
-    let resizeObserver: ResizeObserver | null = null;
-
-    (async () => {
-      const {
-        Map: MapLibreMapConstructor,
-        NavigationControl,
-        GeolocateControl,
-        LngLatBounds,
-      } = await import("maplibre-gl");
-
-      if (disposed || !container) return;
-
-      map = new MapLibreMapConstructor({
-        container,
-        center: CENTER,
-        style: STYLE_URL,
-        zoom: INITIAL_ZOOM,
-        maxZoom: MAX_ZOOM,
-        maxBounds: new LngLatBounds(BENGUET_BOUNDS[0], BENGUET_BOUNDS[1]),
-        attributionControl: false,
-      });
-
-      if ("geolocation" in navigator) {
-        const geolocate = new GeolocateControl({
-          positionOptions: { enableHighAccuracy: true },
-          trackUserLocation: true,
-          showUserLocation: true,
-        });
-        geolocate.on("error", () => {});
-        map.addControl(geolocate, "bottom-right");
-      }
-      map.addControl(new NavigationControl({}), "bottom-right");
-
-      map.on("load", () => {
-        if (disposed || !map) return;
-        const m = map;
-
-        m.addSource("benguet", {
-          type: "vector",
-          url: env.VITE_PH_BOUNDARIES_URL,
-          promoteId: {
-            barangay: "adm4_pcode",
-            city: "adm3_pcode",
-            province: "adm2_pcode",
-          },
-          encoding: "mlt",
-          maxzoom: MAX_ZOOM,
-        });
-
-        for (const level of LEVELS) {
-          const color = LEVEL_COLORS[level];
-          m.addLayer({
-            id: `${level}-fill`,
-            type: "fill",
-            source: "benguet",
-            "source-layer": level,
-            paint: { "fill-color": color, "fill-opacity": 0.1 },
-          });
-          m.addLayer({
-            id: `${level}-outline`,
-            type: "line",
-            source: "benguet",
-            "source-layer": level,
-            paint: { "line-color": color, "line-width": 1 },
-          });
-        }
-
-        updateBaseMapVisibility(m, showBaseMapRef.current);
-        updateBoundaryVisibility(
-          m,
-          activeLevelRef.current,
-          showBoundariesRef.current,
-        );
-
-        for (const level of LEVELS) {
-          m.on("mousemove", `${level}-fill`, (e) => {
-            const feature = e.features?.[0];
-            if (feature && activeLevelRef.current === level) {
-              m.getCanvas().style.cursor = "pointer";
-              setHoveredInfo({
-                x: e.point.x,
-                y: e.point.y,
-                props: (feature.properties ?? {}) as Record<string, unknown>,
-              });
-            }
-          });
-          m.on("mouseleave", `${level}-fill`, () => {
-            m.getCanvas().style.cursor = "";
-            setHoveredInfo(null);
-          });
-        }
-
-        mapRef.current = m;
-        setMapReady(true);
-        setIsLoading(false);
-      });
-
-      resizeObserver = new ResizeObserver(() => {
-        map?.resize();
-      });
-      resizeObserver.observe(container);
-      map.resize();
-    })();
-
-    return () => {
-      disposed = true;
-      resizeObserver?.disconnect();
-      map?.remove();
-      mapRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (mapRef.current) updateBaseMapVisibility(mapRef.current, showBaseMap);
-  }, [showBaseMap]);
-
-  useEffect(() => {
-    if (mapRef.current)
-      updateBoundaryVisibility(mapRef.current, activeLevel, showBoundaries);
-  }, [activeLevel, showBoundaries]);
-
-  useEffect(() => {
-    if (!mapRef.current || !mapReady) return;
-    const hasAffected =
-      affectedCounts.city.size > 0 || affectedCounts.barangay.size > 0;
-    updateAreaOverlays(
-      mapRef.current,
-      affectedCounts,
-      showBoundaries && hasAffected,
-    );
-  }, [mapReady, affectedCounts, showBoundaries]);
 
   useLayoutEffect(() => {
     const el = popupRef.current;
@@ -366,10 +715,38 @@ export default function OutageMap({
   }, [hoveredInfo]);
 
   const labels = hoveredInfo ? tooltipLabels(hoveredInfo.props) : null;
+  const selectionLabels = selected ? tooltipLabels(selected.props) : null;
+  const recentlyResolvedLabel = resolvedWindowLabel(
+    recentlyResolvedWindow ?? { mode: "sameDay" },
+  );
+  const handleSelect = (sel: SelectedArea) => {
+    setSelected((prev) =>
+      prev && prev.level === sel.level && prev.pcode === sel.pcode ? null : sel,
+    );
+  };
 
   return (
-    <div className="relative h-full w-full overflow-hidden bg-slate-950">
-      <div ref={containerRef} className="absolute inset-0 h-full w-full" />
+    <div ref={containerRef} className="relative h-full w-full overflow-hidden">
+      <MapView
+        className="absolute inset-0 h-full w-full"
+        center={CENTER}
+        zoom={INITIAL_ZOOM}
+        maxZoom={MAX_ZOOM}
+        maxBounds={BENGUET_BOUNDS}
+        styles={{ light: LIGHT_STYLE_URL, dark: DARK_STYLE_URL }}
+      >
+        <MapControls position="bottom-right" showZoom showLocate />
+        <BoundaryLayers
+          activeLevel={activeLevel}
+          showBaseMap={showBaseMap}
+          showBoundaries={showBoundaries}
+          counts={affectedCounts}
+          partial={affectedPartial}
+          selected={selected}
+          onHover={setHoveredInfo}
+          onSelect={handleSelect}
+        />
+      </MapView>
 
       <TooltipProvider delayDuration={200}>
         <div className="absolute right-2 top-3 z-10 flex flex-col gap-1.5">
@@ -381,6 +758,7 @@ export default function OutageMap({
                 size="icon"
                 aria-label={showBaseMap ? "Hide base map" : "Show base map"}
                 onClick={() => setShowBaseMap((v) => !v)}
+                className="cursor-pointer"
               >
                 <MapIcon />
               </Button>
@@ -400,6 +778,7 @@ export default function OutageMap({
                   showBoundaries ? "Hide boundaries" : "Show boundaries"
                 }
                 onClick={() => setShowBoundaries((v) => !v)}
+                className="cursor-pointer"
               >
                 <Layers />
               </Button>
@@ -416,23 +795,59 @@ export default function OutageMap({
                 variant="secondary"
                 size="icon"
                 aria-label="Choose admin level"
+                className="cursor-pointer"
               >
                 <Settings2 />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40">
-              {LEVELS.map((level) => (
-                <DropdownMenuItem
-                  key={level}
-                  onSelect={() => setActiveLevel(level)}
+              <DropdownMenuGroup>
+                <DropdownMenuLabel>Admin level</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuRadioGroup
+                  value={activeLevel}
+                  onValueChange={(value) => {
+                    setActiveLevel(value as AdminLevel);
+                    setSelected(null);
+                  }}
                 >
-                  {LEVEL_LABELS[level]}
-                </DropdownMenuItem>
-              ))}
+                  {LEVELS.map((level) => (
+                    <DropdownMenuRadioItem
+                      key={level.id}
+                      value={level.id}
+                      className="cursor-pointer"
+                    >
+                      {level.label}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </TooltipProvider>
+
+      <div className="absolute bottom-3 left-3 z-10">
+        <Card className="w-44">
+          <CardHeader>
+            <CardTitle className="text-xs font-semibold ">Legend</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="size-3 shrink-0 rounded-full bg-[#ef4444]" />
+              <span>Active outage</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="size-3 shrink-0 rounded-full bg-[#22c55e]" />
+              <span>{recentlyResolvedLabel}</span>
+            </div>
+            <p className="text-muted-foreground">No color = no outage</p>
+            <Separator />
+            <p>Solid = Whole area</p>
+            <p>Striped = Partial area</p>
+          </CardContent>
+        </Card>
+      </div>
 
       {labels && hoveredInfo && (
         <div
@@ -456,12 +871,25 @@ export default function OutageMap({
         </div>
       )}
 
-      {isLoading && (
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-background/70 backdrop-blur-sm">
-          <Skeleton className="size-12 rounded-full" />
-          <Skeleton className="h-4 w-44" />
-        </div>
-      )}
+      <Sheet
+        open={selected !== null}
+        onOpenChange={(open) => {
+          if (!open) setSelected(null);
+        }}
+      >
+        <SheetContent side="right" className="w-80 sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>
+              {selectionLabels?.primary ?? selected?.pcode ?? ""}
+            </SheetTitle>
+            <SheetDescription>
+              {[selectionLabels?.secondary, selectionLabels?.tertiary].join(
+                selectionLabels?.secondary ? ", " : "",
+              )}
+            </SheetDescription>
+          </SheetHeader>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
