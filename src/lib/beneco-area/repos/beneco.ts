@@ -12,7 +12,7 @@ type Barangay = typeof barangays.$inferSelect & { municipality: string };
 let db: NeonHttpDatabase<BenecoSchema> | undefined;
 
 async function getDb(): Promise<NeonHttpDatabase<BenecoSchema> | undefined> {
-  const client = await getClient();
+  const client = getClient();
   if (!client) return undefined;
   db ??= drizzle(client, { schema: benecoSchema });
   return db;

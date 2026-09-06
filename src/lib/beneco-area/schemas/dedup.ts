@@ -20,7 +20,5 @@ export const resolvedOutages = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (table) => [
-    index("resolved_outages_resolved_at_idx").on(table.resolvedAt),
-  ],
+  (table) => [index("resolved_outages_resolved_at_idx").on(table.resolvedAt)],
 );

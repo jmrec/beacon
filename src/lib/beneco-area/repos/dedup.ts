@@ -41,7 +41,7 @@ let db: ResolvedOutagesDb | undefined;
 
 async function getStoreDb(): Promise<ResolvedOutagesDb> {
   if (db) return db;
-  const client = await getClient();
+  const client = getClient();
   if (!client) {
     throw new Error("DATABASE_URL is not set; cannot reach the durable store");
   }
