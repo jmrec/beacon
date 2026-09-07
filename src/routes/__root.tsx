@@ -56,7 +56,7 @@ function NotFound() {
         <p className="max-w-xl">
           The page you're looking for doesn't exist or has moved.
         </p>
-        <Link to="/" className="nav-link">
+        <Link to="/" search={{ v: undefined }} className="nav-link">
           Back to Home
         </Link>
       </section>

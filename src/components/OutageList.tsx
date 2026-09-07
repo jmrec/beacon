@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useStore } from "@tanstack/react-store";
 import type { ColDef, GridApi } from "ag-grid-community";
 import {
   AllCommunityModule,
@@ -17,8 +18,17 @@ import {
   Zap,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import type { OutageFeed } from "#/lib/beneco-area/types/internal";
 import { getOutages } from "../lib/beneco-area/feed";
-import type { OutageFeed, OutagePeriod } from "../lib/beneco-area/types/api";
+import {
+  STATUS_LABEL,
+  STATUS_ORDER,
+  STATUS_TONE,
+  type StatusKey,
+  statusKey,
+} from "../lib/beneco-area/outage-status";
+import type { Outage } from "../lib/beneco-area/types/internal";
+import { outagePeriodStore } from "../lib/outage-period";
 import { Badge } from "./ui/badge";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -26,14 +36,6 @@ if (typeof window !== "undefined" && process.env.NODE_ENV !== "production") {
   enableDevValidations();
 }
 
-const PERIODS: { value: OutagePeriod; label: string }[] = [
-  { value: "today", label: "Today" },
-  { value: "this_week", label: "This Week" },
-  { value: "last_week", label: "Last Week" },
-];
-
-// Colours reference the app's theme tokens (via var()) so the grid follows the
-// light/dark toggle automatically.
 const gridTheme = themeQuartz.withParams({
   fontFamily: ["Manrope", "ui-sans-serif", "system-ui", "sans-serif"],
   backgroundColor: "var(--bg-base)",
@@ -55,13 +57,26 @@ const defaultColDef = {
 
 type View = "all" | "scheduled";
 
+function toRow(outage: Outage): OutageRow {
+  const scheduled = outage.kind === "scheduled";
+  return {
+    id: `${scheduled ? "s" : "u"}-${outage.id}`,
+    type: scheduled ? "Scheduled" : "Unscheduled",
+    feeder: outage.feeder,
+    area: outage.area,
+    when: outage.schedule,
+    status: statusKey(outage.status),
+    consumers: outage.consumers,
+  };
+}
+
 interface OutageRow {
   id: string;
   type: "Unscheduled" | "Scheduled";
   feeder: string;
   area: string;
   when: string;
-  status: string;
+  status: StatusKey;
   consumers: number | null;
 }
 
@@ -85,32 +100,9 @@ function TypeCell({ value }: { value?: string }) {
 
 function StatusCell({ data }: { data?: OutageRow }) {
   if (!data) return null;
-  if (data.type === "Scheduled") {
-    const cancelled = data.status === "Cancelled";
-    return (
-      <Badge
-        variant="secondary"
-        className={
-          cancelled
-            ? "bg-rose-500/15 text-rose-700 dark:text-rose-300"
-            : "bg-sky-500/15 text-sky-700 dark:text-sky-300"
-        }
-      >
-        {cancelled ? "Cancelled" : "Scheduled"}
-      </Badge>
-    );
-  }
-  const ongoing = data.status === "Ongoing";
   return (
-    <Badge
-      variant="secondary"
-      className={
-        ongoing
-          ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
-          : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
-      }
-    >
-      {ongoing ? "Ongoing" : data.status || "Restored"}
+    <Badge variant="secondary" className={STATUS_TONE[data.status]}>
+      {STATUS_LABEL[data.status]}
     </Badge>
   );
 }
@@ -177,7 +169,7 @@ const colDefs: ColDef<OutageRow>[] = [
 ];
 
 export default function OutageList() {
-  const [period, setPeriod] = useState<OutagePeriod>("this_week");
+  const period = useStore(outagePeriodStore, (s) => s.period);
   const [view, setView] = useState<View>("all");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<string>("all");
@@ -192,42 +184,20 @@ export default function OutageList() {
 
   const rows = useMemo<OutageRow[]>(() => {
     if (!data) return EMPTY_ROWS;
-    const unscheduled: OutageRow[] = data.unscheduled.map((o) => ({
-      id: `u-${o.id}`,
-      type: "Unscheduled",
-      feeder: o.feeder.trim(),
-      area: o.area,
-      when: `Off ${o.timeoff} · ${o.duration}`,
-      status: o.status,
-      consumers: null,
-    }));
-    const scheduled: OutageRow[] = data.scheduled.map((o) => ({
-      id: `s-${o.id}`,
-      type: "Scheduled",
-      feeder: o.feeder.trim(),
-      area: o.areas,
-      when: `${o.date} · ${o.timeoff}–${o.timerestored}`,
-      status: o.cancelled === 1 ? "Cancelled" : "Scheduled",
-      consumers: o.noofcons,
-    }));
-    return [...unscheduled, ...scheduled];
+    return [...data.unscheduled.map(toRow), ...data.scheduled.map(toRow)];
   }, [data]);
 
   const statusOptions = useMemo(
-    () => Array.from(new Set(rows.map((r) => r.status).filter(Boolean))).sort(),
+    () => STATUS_ORDER.filter((k) => rows.some((r) => r.status === k)),
     [rows],
   );
 
-  // Rows for the active view. View switching happens OUTSIDE the grid (we feed
-  // it a different dataset), so nothing ever mutates filters back — no loops.
   const viewRows = useMemo(
     () =>
       view === "scheduled" ? rows.filter((r) => r.type === "Scheduled") : rows,
     [rows, view],
   );
 
-  // Mirror of search + status, used only for the INACTIVE tab badge (the grid
-  // can't report a filtered count for a dataset it isn't showing).
   const mirror = useMemo(() => {
     const tokens = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
     const m = (r: OutageRow) => {
@@ -251,7 +221,6 @@ export default function OutageList() {
     };
   }, [rows, search, status]);
 
-  // Status enum drives AG Grid's own column filter on the loaded dataset.
   useEffect(() => {
     const api = gridApiRef.current;
     if (!api) return;
@@ -262,31 +231,14 @@ export default function OutageList() {
     api.setColumnFilterModel("status", model).then(() => api.onFilterChanged());
   }, [status]);
 
-  // The active tab and paragraph use the grid's live displayed count (includes
-  // the search box and AG Grid's built-in column filters). The inactive tab
-  // falls back to the search/status mirror above.
   const allCount = view === "all" ? resultCount : mirror.all;
   const scheduledCount = view === "scheduled" ? resultCount : mirror.scheduled;
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-[var(--sea-ink-soft)]">
-          Power interruptions reported by BENECO.
-        </p>
-        <select
-          value={period}
-          onChange={(e) => setPeriod(e.target.value as OutagePeriod)}
-          className="rounded-lg border border-[var(--line)] bg-[var(--surface-strong)] px-3 py-1.5 text-sm font-medium text-[var(--sea-ink)] outline-none"
-          aria-label="Outage period"
-        >
-          {PERIODS.map((p) => (
-            <option key={p.value} value={p.value}>
-              {p.label}
-            </option>
-          ))}
-        </select>
-      </div>
+      <p className="text-sm text-[var(--sea-ink-soft)]">
+        Power interruptions reported by BENECO.
+      </p>
 
       {isLoading && (
         <p className="text-sm text-[var(--sea-ink-soft)]">Loading outages…</p>
@@ -327,7 +279,7 @@ export default function OutageList() {
                 <option value="all">All statuses</option>
                 {statusOptions.map((s) => (
                   <option key={s} value={s}>
-                    {s}
+                    {STATUS_LABEL[s]}
                   </option>
                 ))}
               </select>
@@ -429,10 +381,14 @@ function EmptyNote({ text }: { text: string }) {
 
 function Overview({ data }: { data: OutageFeed }) {
   const total = data.unscheduled.length + data.scheduled.length;
-  const ongoing = data.unscheduled.filter((o) => o.status === "Ongoing").length;
-  const cancelled = data.scheduled.filter((o) => o.cancelled === 1).length;
+  const ongoing = data.unscheduled.filter(
+    (o) => o.status.state === "ongoing",
+  ).length;
+  const cancelled = data.scheduled.filter(
+    (o) => o.status.state === "cancelled",
+  ).length;
   const consumers = data.scheduled.reduce(
-    (sum, o) => sum + Number(o.noofcons || 0),
+    (sum, o) => sum + (o.consumers ?? 0),
     0,
   );
 

@@ -1,13 +1,13 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { type OutageFeed } from "../src/lib/beneco-area/feed.ts";
 import {
   resolveOutageAreas,
   tasksFromOutageFeed,
 } from "../src/lib/beneco-area/resolver.ts";
-import type {
-  OutageFeed,
-  ScheduledOutage,
-  UnscheduledOutage,
+import {
+  scheduledFeedSchema,
+  unscheduledFeedSchema,
 } from "../src/lib/beneco-area/types/api.ts";
 
 interface FeedSource {
@@ -58,14 +58,12 @@ async function loadKindArray(
 
 async function loadFeed(source: FeedSource): Promise<OutageFeed> {
   return {
-    unscheduled: (await loadKindArray(
-      "unscheduled",
-      source.unscheduled,
-    )) as UnscheduledOutage[],
-    scheduled: (await loadKindArray(
-      "scheduled",
-      source.scheduled,
-    )) as ScheduledOutage[],
+    unscheduled: unscheduledFeedSchema.parse(
+      await loadKindArray("unscheduled", source.unscheduled),
+    ),
+    scheduled: scheduledFeedSchema.parse(
+      await loadKindArray("scheduled", source.scheduled),
+    ),
   };
 }
 

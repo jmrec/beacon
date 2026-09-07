@@ -1,23 +1,40 @@
-import { Layers, Map as MapIcon, Settings2 } from "lucide-react";
+import { Layers, Map as MapIcon, Settings2, ZapOff } from "lucide-react";
 import type {
   DataDrivenPropertyValueSpecification,
   MapLayerMouseEvent,
   Map as MapLibreMap,
 } from "maplibre-gl";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { Pcode } from "#/lib/beneco-area/types/internal.ts";
-import { env, type RecentlyResolvedWindow } from "../env";
+import {
+  areaLevelOf,
+  currentAreaNode,
+  isAreaNode,
+  type SheetNode,
+} from "#/lib/beneco-area/sheet.ts";
+import type {
+  OutageFeed,
+  OutagePeriod,
+  Pcode,
+} from "#/lib/beneco-area/types/internal.ts";
+import { env } from "../env";
 import {
   type AreaOverlayCounts,
   type AreaOverlayOutage,
   type AreaOverlayPartial,
-  aggregateAffectedCounts,
-  aggregatePartial,
+  aggregateOverlay,
   type CountMap,
   tallyColor,
 } from "../lib/beneco-area/area-overlay";
+import { getPeriodLabel } from "../lib/outage-period";
+import AreaSheet, { type MapHighlight } from "./AreaSheet";
 import { Button } from "./ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "./ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,13 +47,6 @@ import {
 } from "./ui/dropdown-menu";
 import { MapControls, Map as MapView, useMap } from "./ui/map";
 import { Separator } from "./ui/separator";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "./ui/sheet";
 import {
   Tooltip,
   TooltipContent,
@@ -88,13 +98,14 @@ const CUSTOM_LAYER_IDS = new Set(
     MAP_ID.boundaryOutline(level.id),
     MAP_ID.outageFill(level.id),
     MAP_ID.selectOutline(level.id),
+    highlightFillId(level.id),
   ]),
 );
 
 const OVERLAY_OPACITY: Record<AdminLevel, number> = {
   province: 0.35,
   city: 0.45,
-  barangay: 0.6,
+  barangay: 0.4,
 };
 
 const CENTER: [number, number] = [120.594542, 16.410872];
@@ -135,24 +146,13 @@ function tooltipLabels(props: Record<string, unknown>) {
   };
 }
 
-function resolvedWindowLabel(window: RecentlyResolvedWindow): string {
-  if (window.mode === "sameDay") return "Resolved today";
-  const units: Array<[string, number | undefined]> = [
-    ["year", window.span.years],
-    ["month", window.span.months],
-    ["week", window.span.weeks],
-    ["day", window.span.days],
-    ["hour", window.span.hours],
-    ["minute", window.span.minutes],
-    ["second", window.span.seconds],
-  ];
-  const parts: string[] = [];
-  for (const [name, n] of units) {
-    if (n && n > 0) parts.push(`${n} ${name}${n === 1 ? "" : "s"}`);
-  }
-  return parts.length === 0
-    ? "Recently resolved"
-    : `Resolved within the last ${parts.join(", ")}`;
+function labelsFromProps(props: Record<string, unknown>) {
+  const t = tooltipLabels(props);
+  return {
+    primary: t.primary,
+    ...(t.secondary ? { secondary: t.secondary } : {}),
+    ...(t.tertiary ? { tertiary: t.tertiary } : {}),
+  };
 }
 
 function updateBaseMapVisibility(map: MapLibreMap, visible: boolean) {
@@ -200,6 +200,23 @@ function buildColorExpression(
   return expression as FillColorSpec;
 }
 
+const solidImageCache = new Map<string, string>();
+function solidImageFor(map: MapLibreMap, color: string): string {
+  const id = `solid-${color.replace("#", "")}`;
+  if (map.hasImage(id)) return id;
+  const size = 24;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return id;
+  ctx.fillStyle = color;
+  ctx.fillRect(0, 0, size, size);
+  map.addImage(id, ctx.getImageData(0, 0, size, size));
+  solidImageCache.set(color, id);
+  return id;
+}
+
 const stripeImageCache = new Map<string, string>();
 function stripeImageFor(map: MapLibreMap, color: string): string {
   const id = `stripe-${color.replace("#", "")}`;
@@ -233,10 +250,12 @@ function buildPatternExpression(
 ): FillColorSpec {
   const pairs: (string | string[])[] = [];
   for (const [pcode, tally] of counts) {
-    if (!partial.has(pcode)) continue;
     const color = tallyColor(tally);
     if (!color) continue;
-    pairs.push(pcode, stripeImageFor(map, color));
+    const image = partial.has(pcode)
+      ? stripeImageFor(map, color)
+      : solidImageFor(map, color);
+    pairs.push(pcode, image);
   }
   if (pairs.length === 0) return "";
   const expression = ["match", ["get", pcodeKey], ...pairs, ""];
@@ -408,6 +427,65 @@ function setSelectOutline(
   ]);
 }
 
+const HIGHLIGHT_COLOR = "#38bdf8";
+const HIGHLIGHT_OPACITY = 0.85;
+
+function highlightFillId(level: AdminLevel): string {
+  return `${level}-highlight-fill`;
+}
+
+function ensureHighlightLayers(map: MapLibreMap) {
+  for (const level of LEVELS) {
+    const id = highlightFillId(level.id);
+    if (map.getLayer(id)) continue;
+    map.addLayer(
+      {
+        id,
+        type: "fill",
+        source: MAP_ID.source,
+        "source-layer": level.id,
+        layout: { visibility: "none" },
+        paint: {
+          "fill-color": HIGHLIGHT_COLOR,
+          "fill-opacity": HIGHLIGHT_OPACITY,
+        },
+      },
+      MAP_ID.boundaryOutline(level.id),
+    );
+  }
+}
+
+function updateHighlightLayers(
+  map: MapLibreMap,
+  highlight: MapHighlight | null,
+) {
+  for (const level of LEVELS) {
+    const id = highlightFillId(level.id);
+    if (!map.getLayer(id)) continue;
+    const active =
+      highlight && highlight.level === level.id && highlight.pcodes.length > 0;
+    if (active) {
+      // Same match-expression technique the outage overlay uses, so ALL affected
+      // pcodes turn sky (a filter-based approach here was unreliable).
+      const pairs: (string | string[])[] = [];
+      for (const pcode of highlight.pcodes) {
+        pairs.push(pcode, HIGHLIGHT_COLOR);
+      }
+      const expression = [
+        "match",
+        ["get", level.pcodeKey],
+        ...pairs,
+        "rgba(0,0,0,0)",
+      ] as unknown as FillColorSpec;
+      map.setPaintProperty(id, "fill-color", expression);
+      map.setPaintProperty(id, "fill-opacity", HIGHLIGHT_OPACITY);
+      map.setLayoutProperty(id, "visibility", "visible");
+    } else {
+      map.setLayoutProperty(id, "visibility", "none");
+    }
+  }
+}
+
 function addBenguetSource(map: MapLibreMap) {
   if (map.getSource(MAP_ID.source)) return;
   map.addSource(MAP_ID.source, {
@@ -449,6 +527,7 @@ function removeBoundaryLayers(map: MapLibreMap) {
       MAP_ID.boundaryOutline(level.id),
       MAP_ID.outageFill(level.id),
       MAP_ID.selectOutline(level.id),
+      highlightFillId(level.id),
     ]) {
       if (map.getLayer(id)) map.removeLayer(id);
     }
@@ -504,6 +583,7 @@ type BoundaryLayersProps = {
   counts: AreaOverlayCounts;
   partial: AreaOverlayPartial;
   selected: SelectedArea | null;
+  highlight: MapHighlight | null;
   onHover: (info: HoverInfo) => void;
   onSelect: (sel: SelectedArea) => void;
 };
@@ -515,6 +595,7 @@ function BoundaryLayers({
   counts,
   partial,
   selected,
+  highlight,
   onHover,
   onSelect,
 }: BoundaryLayersProps) {
@@ -537,6 +618,8 @@ function BoundaryLayers({
   onHoverRef.current = onHover;
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  const highlightRef = useRef(highlight);
+  highlightRef.current = highlight;
 
   useEffect(() => {
     const m = map;
@@ -556,6 +639,8 @@ function BoundaryLayers({
           ? selectedRef.current.pcode
           : null,
     });
+    ensureHighlightLayers(m);
+    updateHighlightLayers(m, highlightRef.current);
 
     const moves: Array<[string, (e: MapLayerMouseEvent) => void]> = [];
     const leaves: Array<[string, () => void]> = [];
@@ -661,6 +746,13 @@ function BoundaryLayers({
 
   useEffect(() => {
     const m = map;
+    if (!m || !isLoaded || !m.getSource(MAP_ID.source)) return;
+    ensureHighlightLayers(m);
+    updateHighlightLayers(m, highlight);
+  }, [map, isLoaded, highlight]);
+
+  useEffect(() => {
+    const m = map;
     if (!m || !isLoaded) return;
     const container = m.getContainer();
     const observer = new ResizeObserver(() => m.resize());
@@ -674,26 +766,36 @@ function BoundaryLayers({
 
 export default function OutageMap({
   resolvedAreas,
-  recentlyResolvedWindow,
+  period,
+  outages,
+  nodes,
+  onNodesChange,
 }: {
   resolvedAreas?: AreaOverlayOutage[];
-  recentlyResolvedWindow?: RecentlyResolvedWindow;
+  period: OutagePeriod;
+  outages?: OutageFeed;
+  nodes: SheetNode[];
+  onNodesChange: (nodes: SheetNode[]) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [showBaseMap, setShowBaseMap] = useState(false);
   const [showBoundaries, setShowBoundaries] = useState(true);
+  const [showResolvedOutages, setShowResolvedOutages] = useState(true);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [activeLevel, setActiveLevel] = useState<AdminLevel>("barangay");
   const [hoveredInfo, setHoveredInfo] = useState<HoverInfo>(null);
-  const [selected, setSelected] = useState<SelectedArea | null>(null);
+  const [highlight, setHighlight] = useState<MapHighlight | null>(null);
 
-  const affectedCounts = useMemo(
-    () => aggregateAffectedCounts(resolvedAreas ?? []),
-    [resolvedAreas],
+  const overlayAreas = useMemo(
+    () =>
+      (showResolvedOutages
+        ? resolvedAreas
+        : resolvedAreas?.filter((o) => o.ongoing)) ?? [],
+    [resolvedAreas, showResolvedOutages],
   );
-  const affectedPartial = useMemo(
-    () => aggregatePartial(resolvedAreas ?? []),
-    [resolvedAreas],
-  );
+  const overlay = useMemo(() => aggregateOverlay(overlayAreas), [overlayAreas]);
+  const affectedCounts = overlay.counts;
+  const affectedPartial = overlay.partial;
 
   const popupRef = useRef<HTMLDivElement>(null);
   const popupWidthRef = useRef(0);
@@ -715,13 +817,36 @@ export default function OutageMap({
   }, [hoveredInfo]);
 
   const labels = hoveredInfo ? tooltipLabels(hoveredInfo.props) : null;
-  const selectionLabels = selected ? tooltipLabels(selected.props) : null;
-  const recentlyResolvedLabel = resolvedWindowLabel(
-    recentlyResolvedWindow ?? { mode: "sameDay" },
-  );
+
+  // The area the map outlines (and the sheet anchors) = the deepest area crumb.
+  const mapSelected: SelectedArea | null = useMemo(() => {
+    const area = currentAreaNode(nodes);
+    if (!area || area.kind !== "area") return null;
+    const level = areaLevelOf(area.pcode) as AdminLevel | null;
+    if (!level) return null;
+    return { level, pcode: area.pcode, props: {} };
+  }, [nodes]);
+
+  useEffect(() => {
+    if (nodes.length === 0) setHighlight(null);
+  }, [nodes]);
+
   const handleSelect = (sel: SelectedArea) => {
-    setSelected((prev) =>
-      prev && prev.level === sel.level && prev.pcode === sel.pcode ? null : sel,
+    const singleOpen =
+      nodes.length === 1 &&
+      nodes[0] !== undefined &&
+      isAreaNode(nodes[0]) &&
+      nodes[0].pcode === sel.pcode;
+    onNodesChange(
+      singleOpen
+        ? []
+        : [
+            {
+              kind: "area",
+              pcode: sel.pcode,
+              labels: labelsFromProps(sel.props),
+            },
+          ],
     );
   };
 
@@ -742,7 +867,8 @@ export default function OutageMap({
           showBoundaries={showBoundaries}
           counts={affectedCounts}
           partial={affectedPartial}
-          selected={selected}
+          selected={mapSelected}
+          highlight={highlight}
           onHover={setHoveredInfo}
           onSelect={handleSelect}
         />
@@ -754,7 +880,7 @@ export default function OutageMap({
             <TooltipTrigger asChild>
               <Button
                 type="button"
-                variant="secondary"
+                variant={showBaseMap ? "default" : "secondary"}
                 size="icon"
                 aria-label={showBaseMap ? "Hide base map" : "Show base map"}
                 onClick={() => setShowBaseMap((v) => !v)}
@@ -772,7 +898,7 @@ export default function OutageMap({
             <TooltipTrigger asChild>
               <Button
                 type="button"
-                variant="secondary"
+                variant={showBoundaries ? "default" : "secondary"}
                 size="icon"
                 aria-label={
                   showBoundaries ? "Hide boundaries" : "Show boundaries"
@@ -788,11 +914,35 @@ export default function OutageMap({
             </TooltipContent>
           </Tooltip>
 
-          <DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant={showResolvedOutages ? "default" : "secondary"}
+                size="icon"
+                aria-label={
+                  showResolvedOutages
+                    ? "Hide resolved outages"
+                    : "Show resolved outages"
+                }
+                onClick={() => setShowResolvedOutages((v) => !v)}
+                className="cursor-pointer"
+              >
+                <ZapOff />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left">
+              {showResolvedOutages
+                ? "Hide resolved outages"
+                : "Show resolved outages"}
+            </TooltipContent>
+          </Tooltip>
+
+          <DropdownMenu open={isMenuOpen} onOpenChange={setIsMenuOpen}>
             <DropdownMenuTrigger asChild>
               <Button
                 type="button"
-                variant="secondary"
+                variant={isMenuOpen ? "default" : "secondary"}
                 size="icon"
                 aria-label="Choose admin level"
                 className="cursor-pointer"
@@ -808,7 +958,7 @@ export default function OutageMap({
                   value={activeLevel}
                   onValueChange={(value) => {
                     setActiveLevel(value as AdminLevel);
-                    setSelected(null);
+                    onNodesChange([]);
                   }}
                 >
                   {LEVELS.map((level) => (
@@ -828,24 +978,32 @@ export default function OutageMap({
       </TooltipProvider>
 
       <div className="absolute bottom-3 left-3 z-10">
-        <Card className="w-44">
-          <CardHeader>
-            <CardTitle className="text-xs font-semibold ">Legend</CardTitle>
+        <Card className="w-37 gap-2 py-3">
+          <CardHeader className="text-center">
+            <CardTitle className="text-xs font-semibold">Legend</CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-col gap-2 text-xs">
+          <CardContent className="flex flex-col gap-2 text-xs px-3">
             <div className="flex items-center gap-2">
               <span className="size-3 shrink-0 rounded-full bg-[#ef4444]" />
               <span>Active outage</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="size-3 shrink-0 rounded-full bg-[#22c55e]" />
-              <span>{recentlyResolvedLabel}</span>
+              <span>Resolved outage within period</span>
             </div>
-            <p className="text-muted-foreground">No color = no outage</p>
             <Separator />
             <p>Solid = Whole area</p>
             <p>Striped = Partial area</p>
           </CardContent>
+          <Separator />
+          <CardFooter className="flex flex-col gap-1 px-2">
+            <p className="text-muted-foreground text-xs">
+              No color = no outage
+            </p>
+            <p className="text-muted-foreground text-xs">
+              Period: {getPeriodLabel(period)}
+            </p>
+          </CardFooter>
         </Card>
       </div>
 
@@ -871,25 +1029,14 @@ export default function OutageMap({
         </div>
       )}
 
-      <Sheet
-        open={selected !== null}
-        onOpenChange={(open) => {
-          if (!open) setSelected(null);
-        }}
-      >
-        <SheetContent side="right" className="w-80 sm:max-w-md">
-          <SheetHeader>
-            <SheetTitle>
-              {selectionLabels?.primary ?? selected?.pcode ?? ""}
-            </SheetTitle>
-            <SheetDescription>
-              {[selectionLabels?.secondary, selectionLabels?.tertiary].join(
-                selectionLabels?.secondary ? ", " : "",
-              )}
-            </SheetDescription>
-          </SheetHeader>
-        </SheetContent>
-      </Sheet>
+      <AreaSheet
+        nodes={nodes}
+        onNodesChange={onNodesChange}
+        activeLevel={activeLevel}
+        resolvedAreas={resolvedAreas ?? []}
+        outages={outages ?? { unscheduled: [], scheduled: [] }}
+        onHighlight={setHighlight}
+      />
     </div>
   );
 }

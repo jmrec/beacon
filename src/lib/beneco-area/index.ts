@@ -1,6 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { isWithinInterval, parseISO, startOfDay, sub } from "date-fns";
-import { env, type RecentlyResolvedWindow } from "../../env.ts";
+import { env } from "../../env.ts";
 import type { AreaOverlayOutage } from "./area-overlay.ts";
 import { fetchScheduledFeed, fetchUnscheduledFeed } from "./feed.ts";
 import {
@@ -14,10 +13,16 @@ import {
   resolveOutageAreas,
   tasksFromOutageFeed,
 } from "./resolver.ts";
-import type { ScheduledOutage, UnscheduledOutage } from "./types/api.ts";
-import type { AreaResolutionOutcome } from "./types/internal.ts";
+import type { AreaResolutionOutcome, Outage, OutagePeriod } from "./types/internal.ts";
 
-const ZERO_DATE_PREFIX = "0000-00-00";
+function isOngoing(
+  outcome: AreaResolutionOutcome,
+  unscheduled: Outage[],
+): boolean {
+  if (outcome.kind !== "unscheduled") return false;
+  const item = unscheduled.find((o) => o.id === outcome.outageId);
+  return item?.status.state === "ongoing";
+}
 
 async function appendResolveTelemetry(info: ResolveTelemetry): Promise<void> {
   const file = env.BENECO_AREA_TELEMETRY_FILE;
@@ -33,80 +38,13 @@ async function appendResolveTelemetry(info: ResolveTelemetry): Promise<void> {
   }
 }
 
-function toDate(raw?: string): Date | null {
-  if (!raw || raw.startsWith(ZERO_DATE_PREFIX)) return null;
-  const parsed = parseISO(raw.replace(" ", "T"));
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function isRecentlyResolved(
-  resolvedAt: Date | null,
-  now: Date,
-  window: RecentlyResolvedWindow,
-): boolean {
-  if (!resolvedAt || resolvedAt > now) return false;
-  const cutoff =
-    window.mode === "sameDay" ? startOfDay(now) : sub(now, window.span);
-  return resolvedAt >= cutoff;
-}
-
-function scheduledInstant(
-  item: ScheduledOutage,
-  field: "timeoff" | "timerestored",
-): Date | null {
-  return toDate(`${item.date} ${item[field]}`);
-}
-
-type OutageStatus = { ongoing: boolean; resolvedRecently: boolean };
-
-function classify(
-  outcome: AreaResolutionOutcome,
-  unscheduledById: Map<UnscheduledOutage["id"], UnscheduledOutage>,
-  scheduledById: Map<ScheduledOutage["id"], ScheduledOutage>,
-  now: Date,
-): OutageStatus {
-  switch (outcome.kind) {
-    case "unscheduled": {
-      const item = unscheduledById.get(outcome.outageId);
-      if (!item || /ongoing/i.test(item.status))
-        return { ongoing: true, resolvedRecently: false };
-      return {
-        ongoing: false,
-        resolvedRecently: isRecentlyResolved(
-          toDate(item.timerestored),
-          now,
-          env.BENECO_RECENTLY_RESOLVED_WINDOW,
-        ),
-      };
-    }
-    case "scheduled": {
-      const item = scheduledById.get(outcome.outageId);
-      if (!item || item.cancelled)
-        return { ongoing: false, resolvedRecently: false };
-
-      const start = scheduledInstant(item, "timeoff");
-      const end = scheduledInstant(item, "timerestored");
-      const ongoing = Boolean(
-        start && end && isWithinInterval(now, { start, end }),
-      );
-
-      return {
-        ongoing,
-        resolvedRecently: isRecentlyResolved(
-          ongoing ? null : end,
-          now,
-          env.BENECO_RECENTLY_RESOLVED_WINDOW,
-        ),
-      };
-    }
-  }
-}
-
-export const getResolvedOutageAreas = createServerFn({ method: "GET" }).handler(
-  async (): Promise<AreaOverlayOutage[]> => {
+export const getResolvedOutageAreas = createServerFn({ method: "GET" })
+  .validator((data: { period: OutagePeriod }) => data)
+  .handler(async ({ data }): Promise<AreaOverlayOutage[]> => {
+    const period = data.period;
     const [unscheduled, scheduled] = await Promise.all([
-      fetchUnscheduledFeed(env.BENECO_UNSCHEDULED_PERIOD),
-      fetchScheduledFeed(env.BENECO_SCHEDULED_PERIOD),
+      fetchUnscheduledFeed(period),
+      fetchScheduledFeed(period),
     ]).catch(() => [[], []]);
 
     const tasks = tasksFromOutageFeed({ unscheduled, scheduled });
@@ -177,10 +115,6 @@ export const getResolvedOutageAreas = createServerFn({ method: "GET" }).handler(
       }
     }
 
-    const unscheduledById = new Map(unscheduled.map((o) => [o.id, o]));
-    const scheduledById = new Map(scheduled.map((o) => [o.id, o]));
-    const now = new Date();
-
     const results: AreaOverlayOutage[] = [];
     for (const task of tasks) {
       const row = storedByOutage.get(task.outageId);
@@ -192,11 +126,12 @@ export const getResolvedOutageAreas = createServerFn({ method: "GET" }).handler(
         municipalities: row.resolution.municipalities,
         unresolved: row.resolution.unresolved,
       };
+      const ongoing = isOngoing(outcome, unscheduled);
       results.push({
         ...outcome,
-        ...classify(outcome, unscheduledById, scheduledById, now),
+        ongoing,
+        resolvedRecently: outcome.kind === "unscheduled" && !ongoing,
       });
     }
     return results;
-  },
-);
+  });

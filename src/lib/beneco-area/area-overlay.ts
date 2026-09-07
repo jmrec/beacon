@@ -35,12 +35,16 @@ function prefixPcode(
   return pcode && pcode.length >= length ? pcode.slice(0, length) : undefined;
 }
 
-export function aggregateAffectedCounts(
-  outages: readonly AreaOverlayOutage[],
-): AreaOverlayCounts {
+export function aggregateOverlay(outages: readonly AreaOverlayOutage[]): {
+  counts: AreaOverlayCounts;
+  partial: AreaOverlayPartial;
+} {
   const province: CountMap = new Map();
   const city: CountMap = new Map();
   const barangay: CountMap = new Map();
+  const wholeProvince = new Set<Pcode>();
+  const wholeCity = new Set<Pcode>();
+  const wholeBarangay = new Set<Pcode>();
 
   for (const outage of outages) {
     const tallyKey: keyof PcodeTally | null = outage.ongoing
@@ -50,36 +54,50 @@ export function aggregateAffectedCounts(
         : null;
     if (tallyKey === null) continue;
 
-    const affected = {
-      barangay: new Set<Pcode>(),
-      city: new Set<Pcode>(),
-      province: new Set<Pcode>(),
-    };
-
     for (const mun of outage.municipalities) {
       if (mun.scope.kind === "included") {
         for (const b of mun.scope.barangays) {
           const bp = prefixPcode(b.pcode, ADM4_PCODE_LEN);
           const cp = bp && prefixPcode(bp, ADM3_PCODE_LEN);
           const pp = bp && prefixPcode(bp, ADM2_PCODE_LEN);
-          if (bp) affected.barangay.add(bp);
-          if (cp) affected.city.add(cp);
-          if (pp) affected.province.add(pp);
+          if (bp) {
+            bump(barangay, bp, tallyKey);
+            if (b.scope.kind === "whole") wholeBarangay.add(bp);
+          }
+          if (cp) bump(city, cp, tallyKey);
+          if (pp) bump(province, pp, tallyKey);
         }
       } else {
         const cp = prefixPcode(mun.pcode, ADM3_PCODE_LEN);
         const pp = cp && prefixPcode(cp, ADM2_PCODE_LEN);
-        if (cp) affected.city.add(cp);
-        if (pp) affected.province.add(pp);
+        if (cp) {
+          bump(city, cp, tallyKey);
+          if (mun.scope.kind === "whole") wholeCity.add(cp);
+        }
+        if (pp) {
+          bump(province, pp, tallyKey);
+          if (mun.scope.kind === "whole") wholeProvince.add(pp);
+        }
       }
     }
-
-    for (const pcode of affected.barangay) bump(barangay, pcode, tallyKey);
-    for (const pcode of affected.city) bump(city, pcode, tallyKey);
-    for (const pcode of affected.province) bump(province, pcode, tallyKey);
   }
 
-  return { province, city, barangay };
+  return {
+    counts: { province, city, barangay },
+    partial: {
+      province: minusWhole(province, wholeProvince),
+      city: minusWhole(city, wholeCity),
+      barangay: minusWhole(barangay, wholeBarangay),
+    },
+  };
+}
+
+function minusWhole(counts: CountMap, whole: Set<Pcode>): Set<Pcode> {
+  const out = new Set<Pcode>();
+  for (const pcode of counts.keys()) {
+    if (!whole.has(pcode)) out.add(pcode);
+  }
+  return out;
 }
 
 export function tallyColor(tally: PcodeTally): string | null {
@@ -98,39 +116,4 @@ export interface AreaOverlayPartial {
   province: Set<Pcode>;
   city: Set<Pcode>;
   barangay: Set<Pcode>;
-}
-
-export function aggregatePartial(
-  outages: readonly AreaOverlayOutage[],
-): AreaOverlayPartial {
-  const partial = {
-    province: new Set<Pcode>(),
-    city: new Set<Pcode>(),
-    barangay: new Set<Pcode>(),
-  };
-
-  for (const outage of outages) {
-    const active = outage.ongoing || outage.resolvedRecently;
-    if (!active) continue;
-
-    for (const mun of outage.municipalities) {
-      if (mun.scope.kind === "included") {
-        for (const b of mun.scope.barangays) {
-          const bp = prefixPcode(b.pcode, ADM4_PCODE_LEN);
-          const cp = bp && prefixPcode(bp, ADM3_PCODE_LEN);
-          const pp = bp && prefixPcode(bp, ADM2_PCODE_LEN);
-          if (bp && b.scope.kind !== "whole") partial.barangay.add(bp);
-          if (cp) partial.city.add(cp);
-          if (pp) partial.province.add(pp);
-        }
-      } else {
-        const cp = prefixPcode(mun.pcode, ADM3_PCODE_LEN);
-        const pp = cp && prefixPcode(cp, ADM2_PCODE_LEN);
-        if (cp && mun.scope.kind !== "whole") partial.city.add(cp);
-        if (pp) partial.province.add(pp);
-      }
-    }
-  }
-
-  return partial;
 }

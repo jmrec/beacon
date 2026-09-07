@@ -1,13 +1,23 @@
 import { Link } from "@tanstack/react-router";
+import { useSelector } from "@tanstack/react-store";
+import type { OutagePeriod } from "#/lib/beneco-area/types/internal.ts";
+import {
+  outagePeriodStore,
+  PERIOD_OPTIONS,
+  setOutagePeriod,
+} from "#/lib/outage-period.ts";
 import ThemeToggle from "./ThemeToggle";
 
 export default function Header() {
+  const period = useSelector(outagePeriodStore, (s) => s.period);
+
   return (
     <header className="sticky top-0 z-50 border-b border-[var(--line)] bg-[var(--header-bg)] px-4 backdrop-blur-lg">
       <nav className="flex justify-between items-center gap-x-3 gap-y-2 py-3 sm:py-4">
         <h2 className="flex-shrink-0 text-base font-semibold tracking-tight">
           <Link
             to="/"
+            search={{ v: undefined }}
             className="items-center px-3 py-1.5 text-sm text-[var(--sea-ink)] no-underline sm:px-4 sm:py-2"
           >
             Beacon
@@ -17,6 +27,7 @@ export default function Header() {
         <div className="flex items-center gap-x-4 gap-y-1 text-sm font-semibold">
           <Link
             to="/"
+            search={{ v: undefined }}
             className="nav-link"
             activeProps={{ className: "nav-link is-active" }}
           >
@@ -38,7 +49,23 @@ export default function Header() {
           </Link>
         </div>
 
-        <div className="flex gap-1.5 sm:gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <label className="flex items-center gap-1.5 text-xs font-semibold text-[var(--sea-ink-soft)]">
+            <span className="hidden sm:inline">Period</span>
+            <select
+              value={period}
+              onChange={(e) => setOutagePeriod(e.target.value as OutagePeriod)}
+              className="h-8 rounded-lg border border-[var(--line)] bg-[var(--surface-strong)] px-2 text-xs font-semibold text-[var(--sea-ink)] outline-none"
+              aria-label="Outage period"
+            >
+              {PERIOD_OPTIONS.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
           <a
             href="https://github.com/jmrec/beacon"
             target="_blank"

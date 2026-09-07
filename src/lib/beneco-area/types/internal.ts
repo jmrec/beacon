@@ -127,3 +127,26 @@ export interface AreaResolutionOutcome extends AreaResolution {
   kind: AreaTask["kind"];
   outageId: number;
 }
+
+//
+// BENECO API
+//
+
+export type { OutageFeed, OutagePeriod } from "./api";
+
+export type OutageKind = AreaTask["kind"];
+
+export type OutageStatus =
+  | { kind: "unscheduled"; state: "ongoing" | "restored" }
+  | { kind: "scheduled"; state: "scheduled" | "cancelled" };
+
+export interface Outage {
+  id: number;
+  kind: OutageKind;
+  feeder: string;
+  area: string;
+  status: OutageStatus;
+  consumers: number | null;
+  purpose: string;
+  schedule: string;
+}

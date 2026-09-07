@@ -7,11 +7,12 @@ import {
   getActiveLlm,
 } from "./llm.ts";
 import { areaResolverTools } from "./tools.ts";
-import type { OutageFeed } from "./types/api.ts";
+import type { OutageFeed } from "./types/internal";
 import {
   type AreaResolution,
   type AreaResolutionOutcome,
   type AreaTask,
+  type Outage,
   parseAreaResolution,
 } from "./types/internal.ts";
 import { AreaResolutionWireSchema } from "./types/llm.ts";
@@ -74,15 +75,16 @@ function buildUserMessage(task: AreaTask, hint?: string): string {
   ].join("\n");
 
   if (!hint) return base;
-  else return [
-    base,
-    "",
-    "Feedback from a rejected previous attempt: your structured output",
-    "violated the output rules below. Re-emit ONE fully valid object that",
-    "satisfies them",
-    "",
-    `- ${hint}`,
-  ].join("\n");
+  else
+    return [
+      base,
+      "",
+      "Feedback from a rejected previous attempt: your structured output",
+      "violated the output rules below. Re-emit ONE fully valid object that",
+      "satisfies them",
+      "",
+      `- ${hint}`,
+    ].join("\n");
 }
 
 function isValidationFailure(error: unknown): boolean {
@@ -173,7 +175,7 @@ async function resolveSingle(
   const modelOptions = createLlmModelOptions();
   const middleware = [agentMiddleware(metrics, llmEnv.LLM_MAX_TOOL_CALLS)];
   const agentLoop = maxIterations(maxTurns);
-  
+
   for (;;) {
     metrics.attempts++;
 
@@ -186,7 +188,7 @@ async function resolveSingle(
         tools: areaResolverTools,
         outputSchema: AreaResolutionWireSchema,
         agentLoopStrategy: agentLoop,
-        middleware
+        middleware,
       });
 
       return { resolution: parseAreaResolution(wire), metrics };
@@ -274,21 +276,14 @@ async function resolveOutageAreas(
 }
 
 function tasksFromOutageFeed(feed: OutageFeed): AreaTask[] {
-  const unscheduled: AreaTask[] | undefined = feed.unscheduled.map((o) => ({
-    key: `u-${o.id}`,
-    kind: "unscheduled",
+  const toTask = (o: Outage): AreaTask => ({
+    key: `${o.kind === "scheduled" ? "s" : "u"}-${o.id}`,
+    kind: o.kind,
     outageId: o.id,
     text: o.area,
     feeder: o.feeder,
-  }));
-  const scheduled: AreaTask[] | undefined = feed.scheduled.map((o) => ({
-    key: `s-${o.id}`,
-    kind: "scheduled",
-    outageId: o.id,
-    text: o.areas,
-    feeder: o.feeder,
-  }));
-  return [...(unscheduled || []), ...(scheduled || [])];
+  });
+  return [...feed.unscheduled.map(toTask), ...feed.scheduled.map(toTask)];
 }
 
 export { resolveOutageAreas, tasksFromOutageFeed };

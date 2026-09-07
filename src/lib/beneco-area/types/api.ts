@@ -1,6 +1,12 @@
 import { z } from "zod";
+import type { Outage } from "./internal.ts";
 
 export type OutagePeriod = "today" | "this_week" | "last_week";
+
+export type OutageFeed = {
+  unscheduled: Outage[];
+  scheduled: Outage[];
+};
 
 function collapse(v?: string | null): string {
   if (!v) return "";
@@ -41,7 +47,7 @@ const nullableTextField = (clean: (s: string) => string) =>
     .unknown()
     .transform((v): string | null => (v == null ? null : clean(String(v))));
 
-export const UnscheduledOutageSchema = z.object({
+const unscheduledItem = z.object({
   id: z.number().int(),
   feeder: textField(collapse),
   area: textField(cleanArea),
@@ -53,9 +59,25 @@ export const UnscheduledOutageSchema = z.object({
   latest_update: nullableTextField(collapse),
 });
 
-export type UnscheduledOutage = z.infer<typeof UnscheduledOutageSchema>;
+const toUnscheduledOutage = (o: z.infer<typeof unscheduledItem>): Outage => ({
+  id: o.id,
+  kind: "unscheduled",
+  feeder: o.feeder,
+  area: o.area,
+  status: {
+    kind: "unscheduled",
+    state: /ongoing/i.test(o.status) ? "ongoing" : "restored",
+  },
+  consumers: null,
+  purpose: "",
+  schedule: `Off ${o.timeoff} · ${o.duration}`,
+});
 
-export const ScheduledOutageSchema = z.object({
+export const unscheduledFeedSchema = z
+  .array(unscheduledItem)
+  .transform((items) => items.map(toUnscheduledOutage));
+
+const scheduledItem = z.object({
   id: z.number().int(),
   intrtype: textField(collapse),
   feeder: textField(collapse),
@@ -72,14 +94,20 @@ export const ScheduledOutageSchema = z.object({
   cancelled: z.number().int(),
 });
 
-export type ScheduledOutage = z.infer<typeof ScheduledOutageSchema>;
-
-export const unscheduledFeedSchema = z.array(UnscheduledOutageSchema);
-export const scheduledFeedSchema = z.array(ScheduledOutageSchema);
-
-export const OutageFeedSchema = z.object({
-  unscheduled: unscheduledFeedSchema,
-  scheduled: scheduledFeedSchema,
+const toScheduledOutage = (o: z.infer<typeof scheduledItem>): Outage => ({
+  id: o.id,
+  kind: "scheduled",
+  feeder: o.feeder,
+  area: o.areas,
+  status: {
+    kind: "scheduled",
+    state: o.cancelled === 1 ? "cancelled" : "scheduled",
+  },
+  consumers: o.noofcons,
+  purpose: o.purpose,
+  schedule: `${o.date} · ${o.timeoff}–${o.timerestored}`,
 });
 
-export type OutageFeed = z.infer<typeof OutageFeedSchema>;
+export const scheduledFeedSchema = z
+  .array(scheduledItem)
+  .transform((items) => items.map(toScheduledOutage));
