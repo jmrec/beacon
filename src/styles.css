@@ -225,6 +225,70 @@ pre code {
   color: #e8efff;
 }
 
+.markdown-alert {
+  --alert-accent: #0969da;
+  border: 1px solid color-mix(in srgb, var(--alert-accent) 32%, transparent);
+  border-inline-start: 3px solid var(--alert-accent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--alert-accent) 8%, transparent);
+  padding: 0.6rem 1rem;
+  margin-block: 1.1em;
+}
+
+.markdown-alert-title {
+  font-weight: 700;
+  margin-bottom: 0.25em;
+  margin-top: 0;
+}
+
+.markdown-alert-content > :first-child {
+  margin-top: 0;
+}
+
+.markdown-alert-content > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-alert-note {
+  --alert-accent: #0969da;
+}
+
+.markdown-alert-tip {
+  --alert-accent: #1a7f37;
+}
+
+.markdown-alert-important {
+  --alert-accent: #8250df;
+}
+
+.markdown-alert-warning {
+  --alert-accent: #9a6700;
+}
+
+.markdown-alert-caution {
+  --alert-accent: #cf222e;
+}
+
+.dark .markdown-alert-note {
+  --alert-accent: #4493f8;
+}
+
+.dark .markdown-alert-tip {
+  --alert-accent: #3fb950;
+}
+
+.dark .markdown-alert-important {
+  --alert-accent: #d2a8ff;
+}
+
+.dark .markdown-alert-warning {
+  --alert-accent: #d29922;
+}
+
+.dark .markdown-alert-caution {
+  --alert-accent: #f85149;
+}
+
 .page-wrap {
   width: min(1080px, calc(100% - 2rem));
   margin-inline: auto;
