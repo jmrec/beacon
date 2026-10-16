@@ -1,9 +1,12 @@
 {
   "name": "beacon",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:24-trixie",
+  "workspaceFolder": "/workspaces/beacon",
   "features": {
     "ghcr.io/devcontainers/features/common-utils:2": {
       "installZsh": true,
-      "configureZshAsDefaultShell": true
+      "configureZshAsDefaultShell": true,
+      "enableNonRootSudo": true
     },
     "ghcr.io/devcontainers/features/git:1": {},
     "ghcr.io/jungaretti/features/vim:1": {}
@@ -12,11 +15,8 @@
   "containerEnv": {
     "COREPACK_ENABLE_DOWNLOAD_PROMPT": "0"
   },
-  "onCreateCommand": "corepack enable && corepack prepare pnpm@12.1.0 --activate",
-  "updateContentCommand": "sudo chown -R node:node /workspaces/beacon /home/node && pnpm install",
-  "postCreateCommand": {
-    "git-gpg-format": "git config --global gpg.format ssh"
-  },
+  "onCreateCommand": "sudo corepack enable && sudo mkdir -p /home/node/.local/share/pnpm/store && sudo chown -R node:node /home/node",
+  "updateContentCommand": "pnpm install",
   "customizations": {
     "vscode": {
       "extensions": [
@@ -33,14 +33,9 @@
         "js/ts.tsdk.path": "node_modules/typescript/lib"
       }
     }
-
   },
   "mounts": [
-    {
-      "source": "beacon_beacon-node_modules",
-      "target": "/workspaces/beacon/node_modules",
-      "type": "volume"
-    }
+    "source=pnpm-store-cache,target=/home/node/.local/share/pnpm/store,type=volume"
   ],
   "forwardPorts": [3000, 6006, 4983],
   "portsAttributes": {
