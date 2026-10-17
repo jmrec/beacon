@@ -1,5 +1,8 @@
+import type {
+  BarangayAffect,
+  MunicipalityAffect,
+} from "#/providers/beneco/area-types.ts";
 import type { AreaOverlayOutage } from "./area-overlay.ts";
-import type { BarangayAffect, MunicipalityAffect } from "./types/internal.ts";
 
 export type AreaLevel = "barangay" | "city" | "province";
 
@@ -23,8 +26,6 @@ export function pcodeAtLevel(
   const len = PCODE_LEN[level];
   return pcode && pcode.length >= len ? pcode.slice(0, len) : undefined;
 }
-
-export const PROVINCE_NAME = "Benguet";
 
 export interface AreaLabels {
   primary: string;
@@ -75,6 +76,7 @@ function includedBarangays(
 export function affectedAreasOf(
   outage: AreaOverlayOutage,
   level: AreaLevel,
+  provinceName = "Province",
 ): AffectedArea[] {
   const result: AffectedArea[] = [];
   const seen = new Set<string>();
@@ -130,7 +132,7 @@ export function affectedAreasOf(
       result.push({
         level: "province",
         pcode,
-        name: PROVINCE_NAME,
+        name: provinceName,
         whole: anyWhole,
       });
       return result;
@@ -143,7 +145,7 @@ export function affectedAreasOf(
       result.push({
         level: "province",
         pcode: derived,
-        name: PROVINCE_NAME,
+        name: provinceName,
         whole: anyWhole,
       });
       return result;
@@ -159,9 +161,10 @@ export function affectedAreasOf(
 export function affectedPcodesOf(
   outage: AreaOverlayOutage,
   level: AreaLevel,
+  provinceName = "Province",
 ): Set<string> {
   const out = new Set<string>();
-  for (const area of affectedAreasOf(outage, level)) {
+  for (const area of affectedAreasOf(outage, level, provinceName)) {
     if (area.pcode) out.add(area.pcode);
   }
   return out;

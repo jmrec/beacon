@@ -1,4 +1,7 @@
-import type { AreaResolutionOutcome, Pcode } from "./types/internal.ts";
+import type {
+  AreaResolutionOutcome,
+  Pcode,
+} from "#/providers/beneco/area-types.ts";
 
 export interface AreaOverlayOutage extends AreaResolutionOutcome {
   ongoing: boolean;

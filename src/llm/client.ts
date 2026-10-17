@@ -1,7 +1,7 @@
 import { createGeminiChat } from "@tanstack/ai-gemini";
 import { openaiCompatibleText } from "@tanstack/ai-openai/compatible";
 import { createOpenRouterText } from "@tanstack/ai-openrouter";
-import { llmEnv } from "../../env-llm.ts";
+import { llmEnv } from "../env-llm.ts";
 
 const DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite";
 const DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash";
@@ -33,7 +33,7 @@ function apiKeyFor(provider: LlmProvider): string {
   const apiKey = llmEnv.LLM_API_KEY?.trim();
   if (!apiKey) {
     throw new Error(
-      `beneco-area resolver: missing LLM_API_KEY for provider "${provider}". Set LLM_API_KEY in your environment.`,
+      `LLM client: missing LLM_API_KEY for provider "${provider}". Set LLM_API_KEY in your environment.`,
     );
   }
   return apiKey;

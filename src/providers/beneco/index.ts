@@ -1,19 +1,21 @@
 import { createServerFn } from "@tanstack/react-start";
+import type { AreaOverlayOutage } from "../../components/area-overlay.ts";
 import { env } from "../../env.ts";
-import type { AreaOverlayOutage } from "./area-overlay.ts";
-import { fetchScheduledFeed, fetchUnscheduledFeed } from "./feed.ts";
 import {
   fingerprintText,
   getResolvedOutageRows,
   type ResolutionRow,
   upsertResolvedOutageRows,
-} from "./repos/dedup.ts";
+} from "../../outages/repository.ts";
+import type { Outage, OutagePeriod } from "../../outages/types.ts";
+import type { AreaResolutionOutcome } from "./area-types.ts";
+import { fetchScheduledFeed, fetchUnscheduledFeed } from "./feed.ts";
+import { benecoProvider } from "./provider.ts";
 import {
   type ResolveTelemetry,
   resolveOutageAreas,
   tasksFromOutageFeed,
 } from "./resolver.ts";
-import type { AreaResolutionOutcome, Outage, OutagePeriod } from "./types/internal.ts";
 
 function isOngoing(
   outcome: AreaResolutionOutcome,
@@ -57,7 +59,7 @@ export const getResolvedOutageAreas = createServerFn({ method: "GET" })
 
     let stored: ResolutionRow[] = [];
     try {
-      stored = await getResolvedOutageRows(liveIds);
+      stored = await getResolvedOutageRows(benecoProvider.id, liveIds);
     } catch (error) {
       console.error("[beneco-area] durable store read failed:", error);
       return [];
@@ -85,6 +87,7 @@ export const getResolvedOutageAreas = createServerFn({ method: "GET" })
       try {
         await upsertResolvedOutageRows(
           fresh.map((outcome) => ({
+            companyId: benecoProvider.id,
             outageId: outcome.outageId,
             kind: outcome.kind,
             key: outcome.key,
@@ -102,6 +105,7 @@ export const getResolvedOutageAreas = createServerFn({ method: "GET" })
 
       for (const outcome of fresh) {
         storedByOutage.set(outcome.outageId, {
+          companyId: benecoProvider.id,
           outageId: outcome.outageId,
           kind: outcome.kind,
           key: outcome.key,

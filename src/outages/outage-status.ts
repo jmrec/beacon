@@ -1,4 +1,4 @@
-import type { OutageStatus } from "./types/internal.ts";
+import type { OutageStatus } from "./types.ts";
 
 export type StatusKey = OutageStatus["state"];
 

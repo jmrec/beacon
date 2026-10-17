@@ -1,5 +1,5 @@
 import { Store } from "@tanstack/store";
-import type { OutagePeriod } from "#/lib/beneco-area/types/internal.ts";
+import type { OutagePeriod } from "#/outages/types.ts";
 
 export const PERIOD_OPTIONS: { value: OutagePeriod; label: string }[] = [
   { value: "today", label: "Today" },
@@ -10,7 +10,7 @@ export const PERIOD_OPTIONS: { value: OutagePeriod; label: string }[] = [
 export const getPeriodLabel = (period: OutagePeriod): string => {
   const option = PERIOD_OPTIONS.find((o) => o.value === period);
   return option ? option.label : period;
-}
+};
 
 export const outagePeriodStore = new Store<{ period: OutagePeriod }>({
   period: "today",

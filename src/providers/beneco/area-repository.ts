@@ -1,20 +1,18 @@
 import { eq, sql } from "drizzle-orm";
 import { drizzle, type NeonHttpDatabase } from "drizzle-orm/neon-http";
 
-import { getClient } from "../../../db.ts";
-import { barangays, municipalities } from "../schemas/beneco.ts";
+import { getClient } from "../../db.ts";
+import { barangays, municipalities } from "./area-schema.ts";
 
-const benecoSchema = { municipalities, barangays } as const;
-type BenecoSchema = typeof benecoSchema;
 type Municipality = Pick<typeof municipalities.$inferSelect, "id" | "name">;
 type Barangay = typeof barangays.$inferSelect & { municipality: string };
 
-let db: NeonHttpDatabase<BenecoSchema> | undefined;
+let db: NeonHttpDatabase | undefined;
 
-async function getDb(): Promise<NeonHttpDatabase<BenecoSchema> | undefined> {
+async function getDb(): Promise<NeonHttpDatabase | undefined> {
   const client = getClient();
   if (!client) return undefined;
-  db ??= drizzle(client, { schema: benecoSchema });
+  db ??= drizzle({ client });
   return db;
 }
 

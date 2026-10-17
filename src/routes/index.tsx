@@ -2,13 +2,13 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useSelector } from "@tanstack/react-store";
 import { useEffect, useMemo } from "react";
-import type { AreaOverlayOutage } from "#/lib/beneco-area/area-overlay.ts";
-import type { SheetNode } from "#/lib/beneco-area/sheet.ts";
-import type {OutageFeed} from "#/lib/beneco-area/types/internal"
+import type { OutageFeed } from "#/outages/types";
+import type { AreaOverlayOutage } from "../components/area-overlay.ts";
 import OutageMap from "../components/OutageMap";
-import { getResolvedOutageAreas } from "../lib/beneco-area";
-import { getOutageFeedForMap } from "../lib/beneco-area/feed";
-import { outagePeriodStore } from "../lib/outage-period";
+import type { SheetNode } from "../components/sheet.ts";
+import { outagePeriodStore } from "../outages/outage-period";
+import { getResolvedOutageAreas } from "../providers/beneco";
+import { getOutageFeedForMap } from "../providers/beneco/feed";
 
 const EMPTY_FEED: OutageFeed = { unscheduled: [], scheduled: [] };
 

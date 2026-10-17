@@ -1,14 +1,11 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { type OutageFeed } from "../src/lib/beneco-area/feed.ts";
+import { type OutageFeed } from "../src/outages/types.ts";
 import {
   resolveOutageAreas,
   tasksFromOutageFeed,
-} from "../src/lib/beneco-area/resolver.ts";
-import {
-  scheduledFeedSchema,
-  unscheduledFeedSchema,
-} from "../src/lib/beneco-area/types/api.ts";
+} from "../src/providers/beneco/resolver.ts";
+import { benecoProvider } from "../src/providers/beneco/provider.ts";
 
 interface FeedSource {
   unscheduled?: string;
@@ -16,11 +13,11 @@ interface FeedSource {
 }
 
 const SAMPLE_FILES: FeedSource = {
-  unscheduled: "src/data/sample_short_unscheduled.json",
-  scheduled: "src/data/sample_short_scheduled.json",
+  unscheduled: "src/fixtures/sample_short_unscheduled.json",
+  scheduled: "src/fixtures/sample_short_scheduled.json",
 };
 
-const OUTPUT_PATH = resolve("src/data/resolved_outage_areas.json");
+const OUTPUT_PATH = resolve("src/providers/beneco/resolved_outage_areas.json");
 
 const SOURCE: FeedSource = {
   unscheduled: "https://api.beneco.com.ph/wballoutages.php?period=today",
@@ -57,14 +54,12 @@ async function loadKindArray(
 }
 
 async function loadFeed(source: FeedSource): Promise<OutageFeed> {
-  return {
-    unscheduled: unscheduledFeedSchema.parse(
-      await loadKindArray("unscheduled", source.unscheduled),
-    ),
-    scheduled: scheduledFeedSchema.parse(
-      await loadKindArray("scheduled", source.scheduled),
-    ),
-  };
+  return benecoProvider.normalize(
+    benecoProvider.parse({
+      unscheduled: await loadKindArray("unscheduled", source.unscheduled),
+      scheduled: await loadKindArray("scheduled", source.scheduled),
+    }),
+  );
 }
 
 const feed = await loadFeed(SOURCE);

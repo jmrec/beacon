@@ -4,8 +4,8 @@ import type {
   BarangayScopeWire,
   MunicipalityAffectWire,
   MunicipalityScopeWire,
-} from "./llm";
-import { AreaResolutionWireSchema } from "./llm";
+} from "./area-llm";
+import { AreaResolutionWireSchema } from "./area-llm";
 
 export type Confidence = "high" | "medium" | "low";
 
@@ -126,27 +126,4 @@ export interface AreaResolutionOutcome extends AreaResolution {
   key: string;
   kind: AreaTask["kind"];
   outageId: number;
-}
-
-//
-// BENECO API
-//
-
-export type { OutageFeed, OutagePeriod } from "./api";
-
-export type OutageKind = AreaTask["kind"];
-
-export type OutageStatus =
-  | { kind: "unscheduled"; state: "ongoing" | "restored" }
-  | { kind: "scheduled"; state: "scheduled" | "cancelled" };
-
-export interface Outage {
-  id: number;
-  kind: OutageKind;
-  feeder: string;
-  area: string;
-  status: OutageStatus;
-  consumers: number | null;
-  purpose: string;
-  schedule: string;
 }

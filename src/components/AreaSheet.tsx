@@ -5,13 +5,16 @@ import {
 } from "@tanstack/react-table";
 import { ArrowLeft, ChevronRight } from "lucide-react";
 import { useMemo, useRef } from "react";
-import type { AreaOverlayOutage } from "#/lib/beneco-area/area-overlay.ts";
 import {
   STATUS_LABEL,
   STATUS_TONE,
   type StatusKey,
   statusKey,
-} from "#/lib/beneco-area/outage-status";
+} from "#/outages/outage-status";
+import type { Outage, OutageFeed } from "#/outages/types.ts";
+import type { Pcode } from "#/providers/beneco/area-types.ts";
+import { benecoAreaConfig } from "../providers/beneco/area.ts";
+import type { AreaOverlayOutage } from "./area-overlay.ts";
 import {
   type AreaLevel,
   affectedAreasOf,
@@ -19,9 +22,7 @@ import {
   areaLevelOf,
   outagesAffecting,
   type SheetNode,
-} from "#/lib/beneco-area/sheet.ts";
-import type { OutageFeed } from "#/lib/beneco-area/types/internal";
-import type { Outage, Pcode } from "#/lib/beneco-area/types/internal.ts";
+} from "./sheet.ts";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Separator } from "./ui/separator";
@@ -178,7 +179,11 @@ export default function AreaSheet({
 
   const affectedRows = useMemo<AffectedAreaRow[]>(() => {
     if (!outageFocus) return EMPTY_AFFECTED;
-    return affectedAreasOf(outageFocus, activeLevel).map((a, i) => ({
+    return affectedAreasOf(
+      outageFocus,
+      activeLevel,
+      benecoAreaConfig.provinceName,
+    ).map((a, i) => ({
       id: a.pcode ?? `${a.name}-${i}`,
       pcode: a.pcode,
       name: a.name,

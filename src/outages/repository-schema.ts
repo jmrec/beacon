@@ -3,15 +3,22 @@ import {
   index,
   jsonb,
   pgTable,
+  primaryKey,
   timestamp,
   varchar,
 } from "drizzle-orm/pg-core";
-import type { AreaResolution, AreaTask } from "../types/internal.ts";
+import type {
+  AreaResolution,
+  AreaTask,
+} from "../providers/beneco/area-types.ts";
 
 export const resolvedOutages = pgTable(
   "resolved_outages",
   {
-    outageId: bigint("outage_id", { mode: "number" }).primaryKey(),
+    companyId: varchar("company_id", { length: 64 })
+      .notNull()
+      .default("beneco"),
+    outageId: bigint("outage_id", { mode: "number" }).notNull(),
     kind: varchar("kind", { length: 16 }).$type<AreaTask["kind"]>().notNull(),
     key: varchar("key", { length: 40 }).notNull(),
     fingerprint: varchar("fingerprint", { length: 64 }).notNull(),
@@ -20,5 +27,8 @@ export const resolvedOutages = pgTable(
       .notNull()
       .defaultNow(),
   },
-  (table) => [index("resolved_outages_resolved_at_idx").on(table.resolvedAt)],
+  (table) => [
+    primaryKey({ columns: [table.companyId, table.outageId] }),
+    index("resolved_outages_resolved_at_idx").on(table.resolvedAt),
+  ],
 );

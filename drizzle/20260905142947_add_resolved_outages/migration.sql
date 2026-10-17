@@ -1,4 +1,4 @@
-CREATE TABLE "resolved_outages" (
+CREATE TABLE IF NOT EXISTS "resolved_outages" (
 	"outage_id" bigint PRIMARY KEY NOT NULL,
 	"kind" varchar(16) NOT NULL,
 	"key" varchar(40) NOT NULL,
@@ -7,4 +7,4 @@ CREATE TABLE "resolved_outages" (
 	"resolved_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE INDEX "resolved_outages_resolved_at_idx" ON "resolved_outages" USING btree ("resolved_at");
+CREATE INDEX IF NOT EXISTS "resolved_outages_resolved_at_idx" ON "resolved_outages" USING btree ("resolved_at");

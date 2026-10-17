@@ -1,9 +1,13 @@
 import { createHash } from "node:crypto";
 import { inArray, notInArray, sql } from "drizzle-orm";
 import { drizzle, type NeonHttpDatabase } from "drizzle-orm/neon-http";
-import { getClient } from "../../../db.ts";
-import { resolvedOutages } from "../schemas/dedup.ts";
-import type { AreaResolution, AreaTask } from "../types/internal.ts";
+import { getClient } from "../db.ts";
+import { env } from "../env.ts";
+import type {
+  AreaResolution,
+  AreaTask,
+} from "../providers/beneco/area-types.ts";
+import { resolvedOutages } from "./repository-schema.ts";
 
 export function fingerprintText(text: string): string {
   return createHash("sha256").update(normalizeAreaText(text)).digest("hex");
@@ -14,6 +18,7 @@ function normalizeAreaText(text: string): string {
 }
 
 export interface ResolutionRow {
+  companyId: string;
   outageId: AreaTask["outageId"];
   kind: AreaTask["kind"];
   key: string;
@@ -26,6 +31,7 @@ export interface ResolutionRow {
 }
 
 export interface ResolutionWrite {
+  companyId: string;
   outageId: AreaTask["outageId"];
   kind: AreaTask["kind"];
   key: string;
@@ -33,9 +39,7 @@ export interface ResolutionWrite {
   resolution: AreaResolution;
 }
 
-type ResolvedOutagesDb = NeonHttpDatabase<{
-  resolvedOutages: typeof resolvedOutages;
-}>;
+type ResolvedOutagesDb = NeonHttpDatabase;
 
 let db: ResolvedOutagesDb | undefined;
 
@@ -45,19 +49,22 @@ async function getStoreDb(): Promise<ResolvedOutagesDb> {
   if (!client) {
     throw new Error("DATABASE_URL is not set; cannot reach the durable store");
   }
-  db = drizzle(client, { schema: { resolvedOutages } });
+  db = drizzle({ client });
   return db;
 }
 
 export async function getResolvedOutageRows(
+  companyId: string,
   outageIds: AreaTask["outageId"][],
 ): Promise<ResolutionRow[]> {
-  if (outageIds.length === 0) return [];
+  if (outageIds.length === 0 || !env.DATABASE_URL) return [];
   const storeDb = await getStoreDb();
   const rows = await storeDb
     .select()
     .from(resolvedOutages)
-    .where(inArray(resolvedOutages.outageId, outageIds));
+    .where(
+      sql`${resolvedOutages.companyId} = ${companyId} and ${inArray(resolvedOutages.outageId, outageIds)}`,
+    );
   return rows;
 }
 
@@ -65,13 +72,14 @@ export async function getResolvedOutageRows(
 export async function upsertResolvedOutageRows(
   rows: ResolutionWrite[],
 ): Promise<void> {
-  if (rows.length === 0) return;
+  if (rows.length === 0 || !env.DATABASE_URL) return;
   const storeDb = await getStoreDb();
   await storeDb
     .insert(resolvedOutages)
     .values(
       rows.map((row) => ({
         outageId: row.outageId,
+        companyId: row.companyId,
         kind: row.kind,
         key: row.key,
         fingerprint: row.fingerprint,
@@ -80,7 +88,7 @@ export async function upsertResolvedOutageRows(
       })),
     )
     .onConflictDoUpdate({
-      target: resolvedOutages.outageId,
+      target: [resolvedOutages.companyId, resolvedOutages.outageId],
       set: {
         kind: sql`excluded.kind`,
         key: sql`excluded.key`,
@@ -96,14 +104,20 @@ export async function upsertResolvedOutageRows(
  * Pass an empty array to clear the table entirely.
  */
 export async function pruneResolvedOutages(
+  companyId: string,
   liveOutageIds: AreaTask["outageId"][],
 ): Promise<void> {
+  if (!env.DATABASE_URL) return;
   const storeDb = await getStoreDb();
   if (liveOutageIds.length === 0) {
-    await storeDb.delete(resolvedOutages);
+    await storeDb
+      .delete(resolvedOutages)
+      .where(sql`${resolvedOutages.companyId} = ${companyId}`);
     return;
   }
   await storeDb
     .delete(resolvedOutages)
-    .where(notInArray(resolvedOutages.outageId, liveOutageIds));
+    .where(
+      sql`${resolvedOutages.companyId} = ${companyId} and ${notInArray(resolvedOutages.outageId, liveOutageIds)}`,
+    );
 }

@@ -5,18 +5,11 @@ import type {
   Map as MapLibreMap,
 } from "maplibre-gl";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import {
-  areaLevelOf,
-  currentAreaNode,
-  isAreaNode,
-  type SheetNode,
-} from "#/lib/beneco-area/sheet.ts";
-import type {
-  OutageFeed,
-  OutagePeriod,
-  Pcode,
-} from "#/lib/beneco-area/types/internal.ts";
+import type { OutageFeed, OutagePeriod } from "#/outages/types.ts";
+import type { Pcode } from "#/providers/beneco/area-types.ts";
 import { env } from "../env";
+import { getPeriodLabel } from "../outages/outage-period";
+import AreaSheet, { type MapHighlight } from "./AreaSheet";
 import {
   type AreaOverlayCounts,
   type AreaOverlayOutage,
@@ -24,9 +17,13 @@ import {
   aggregateOverlay,
   type CountMap,
   tallyColor,
-} from "../lib/beneco-area/area-overlay";
-import { getPeriodLabel } from "../lib/outage-period";
-import AreaSheet, { type MapHighlight } from "./AreaSheet";
+} from "./area-overlay";
+import {
+  areaLevelOf,
+  currentAreaNode,
+  isAreaNode,
+  type SheetNode,
+} from "./sheet.ts";
 import { Button } from "./ui/button";
 import {
   Card,

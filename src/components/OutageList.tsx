@@ -18,17 +18,16 @@ import {
   Zap,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import type { OutageFeed } from "#/lib/beneco-area/types/internal";
-import { getOutages } from "../lib/beneco-area/feed";
+import { outagePeriodStore } from "../outages/outage-period";
 import {
   STATUS_LABEL,
   STATUS_ORDER,
   STATUS_TONE,
   type StatusKey,
   statusKey,
-} from "../lib/beneco-area/outage-status";
-import type { Outage } from "../lib/beneco-area/types/internal";
-import { outagePeriodStore } from "../lib/outage-period";
+} from "../outages/outage-status";
+import type { Outage, OutageFeed } from "../outages/types";
+import { getOutages } from "../providers/beneco/feed";
 import { Badge } from "./ui/badge";
 
 ModuleRegistry.registerModules([AllCommunityModule]);

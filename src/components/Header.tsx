@@ -1,11 +1,11 @@
 import { Link } from "@tanstack/react-router";
 import { useSelector } from "@tanstack/react-store";
-import type { OutagePeriod } from "#/lib/beneco-area/types/internal.ts";
 import {
   outagePeriodStore,
   PERIOD_OPTIONS,
   setOutagePeriod,
-} from "#/lib/outage-period.ts";
+} from "#/outages/outage-period.ts";
+import type { OutagePeriod } from "#/outages/types.ts";
 import ThemeToggle from "./ThemeToggle";
 
 export default function Header() {

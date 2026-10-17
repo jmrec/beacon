@@ -5,17 +5,16 @@ import {
   createLlmAdapter,
   createLlmModelOptions,
   getActiveLlm,
-} from "./llm.ts";
-import { areaResolverTools } from "./tools.ts";
-import type { OutageFeed } from "./types/internal";
+} from "../../llm/client.ts";
+import type { Outage, OutageFeed } from "../../outages/types.ts";
+import { AreaResolutionWireSchema } from "./area-llm.ts";
 import {
   type AreaResolution,
   type AreaResolutionOutcome,
   type AreaTask,
-  type Outage,
   parseAreaResolution,
-} from "./types/internal.ts";
-import { AreaResolutionWireSchema } from "./types/llm.ts";
+} from "./area-types.ts";
+import { areaResolverTools } from "./tools.ts";
 
 const SYSTEM_PROMPT = `Map BENECO outage "affected area" text to affected municipalities/barangays from a reference dataset. Output ONE object: municipalities[] + unresolved[].
 

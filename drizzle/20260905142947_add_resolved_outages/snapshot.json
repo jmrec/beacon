@@ -1,0 +1,126 @@
+{
+  "id": "d05acb5e-3494-44c2-b2eb-d862d7f62d02",
+  "prevIds": [
+    "00000000-0000-0000-0000-000000000000"
+  ],
+  "version": "8",
+  "dialect": "postgres",
+  "ddl": [
+    {
+      "isRlsEnabled": false,
+      "name": "resolved_outages",
+      "schema": "public",
+      "entityType": "tables"
+    },
+    {
+      "columns": [
+        "outage_id"
+      ],
+      "nameExplicit": false,
+      "name": "resolved_outages_pkey",
+      "schema": "public",
+      "table": "resolved_outages",
+      "entityType": "pks"
+    },
+    {
+      "type": "bigint",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "outage_id",
+      "schema": "public",
+      "table": "resolved_outages",
+      "entityType": "columns"
+    },
+    {
+      "type": "varchar(16)",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "kind",
+      "schema": "public",
+      "table": "resolved_outages",
+      "entityType": "columns"
+    },
+    {
+      "type": "varchar(40)",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "key",
+      "schema": "public",
+      "table": "resolved_outages",
+      "entityType": "columns"
+    },
+    {
+      "type": "varchar(64)",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "fingerprint",
+      "schema": "public",
+      "table": "resolved_outages",
+      "entityType": "columns"
+    },
+    {
+      "type": "jsonb",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "resolution",
+      "schema": "public",
+      "table": "resolved_outages",
+      "entityType": "columns"
+    },
+    {
+      "type": "timestamp with time zone",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": "now()",
+      "generated": null,
+      "identity": null,
+      "name": "resolved_at",
+      "schema": "public",
+      "table": "resolved_outages",
+      "entityType": "columns"
+    },
+    {
+      "nameExplicit": true,
+      "columns": [
+        {
+          "value": "resolved_at",
+          "isExpression": false,
+          "asc": true,
+          "nullsFirst": false,
+          "opclass": null
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "with": "",
+      "method": "btree",
+      "concurrently": false,
+      "name": "resolved_outages_resolved_at_idx",
+      "schema": "public",
+      "table": "resolved_outages",
+      "entityType": "indexes"
+    }
+  ],
+  "renames": []
+}
