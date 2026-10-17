@@ -28,7 +28,6 @@
     "table",
     "store",
     "tanstack-query",
-    "storybook",
     "neon"
   ]
 }

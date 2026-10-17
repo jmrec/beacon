@@ -37,14 +37,10 @@
   "mounts": [
     "source=pnpm-store-cache,target=/home/node/.local/share/pnpm/store,type=volume"
   ],
-  "forwardPorts": [3000, 6006, 4983],
+  "forwardPorts": [3000, 4983],
   "portsAttributes": {
     "3000": {
       "label": "Vite Dev Server",
-      "onAutoForward": "notify"
-    },
-    "6006": {
-      "label": "Storybook",
       "onAutoForward": "notify"
     },
     "4983": {
