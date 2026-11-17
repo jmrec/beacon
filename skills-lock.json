@@ -13,6 +13,13 @@
       "skillPath": "skills/ag-update/SKILL.md",
       "computedHash": "8419b66c52e36abf26d480522571217bfd70d9a6f1db2caf90fa53e98d002235"
     },
+    "likec4-dsl": {
+      "source": "likec4.dev",
+      "sourceUrl": "https://likec4.dev/",
+      "sourceType": "well-known",
+      "computedHash": "0e63f8b56bb5496b289eed41e213ace380d03cfe0d0b234e1846f0fc1b1bab39",
+      "wellKnownDigest": "sha256:660b5f00525a683308706660fc7345da5eb1a80cbc453269d7badb87b3e1ab0a"
+    },
     "mapcn": {
       "source": "AnmolSaini16/mapcn",
       "commit": "fd8ce8f7581a80376d7a9426364edeed17c99f35",

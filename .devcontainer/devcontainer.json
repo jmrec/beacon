@@ -46,6 +46,14 @@
     "4983": {
       "label": "Drizzle Studio",
       "onAutoForward": "notify"
+    },
+    "5173": {
+      "label": "LikeC4 Dev",
+      "onAutoForward": "notify"
+    },
+    "4173": {
+      "label": "LikeC4 Preview",
+      "onAutoForward": "notify"
     }
   }
 }

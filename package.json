@@ -19,6 +19,8 @@
     "db:push": "drizzle-kit push",
     "db:pull": "drizzle-kit pull",
     "db:studio": "drizzle-kit studio",
+    "c4:dev": "likec4 dev",
+    "c4:build": "likec4 build",
     "resolve:areas": "tsx --env-file=.env.local scripts/test-area-resolver.ts",
     "tree": "pnpx file-tree-cli ."
   },
@@ -89,6 +91,7 @@
     "date-fns": "^4.4.0",
     "dotenv": "^17.3.1",
     "file-tree-cli": "^0.0.2",
+    "likec4": "^1.61.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",
     "vite": "^8.0.0",
