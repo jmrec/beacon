@@ -19,8 +19,9 @@
     "db:push": "drizzle-kit push",
     "db:pull": "drizzle-kit pull",
     "db:studio": "drizzle-kit studio",
-    "c4:dev": "likec4 dev",
-    "c4:build": "likec4 build",
+    "c4:dev": "likec4 start docs/architecture",
+    "c4:build": "likec4 build docs/architecture",
+    "c4:validate": "likec4 validate --no-layout docs/architecture",
     "resolve:areas": "tsx --env-file=.env.local scripts/test-area-resolver.ts",
     "tree": "pnpx file-tree-cli ."
   },
