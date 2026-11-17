@@ -18,6 +18,12 @@ Every outage on the site goes through three steps:
 2. **Resolve** — a LLM reads each written affected area and maps it into cities and barangays (with their respective `id` and `pcode`), choosing only from BENECO's actual service area and keeping anything it can't place as `unresolved`.
 3. **Display** — shade the affected barangays, municipalities, and provinces on the map, and list the same outages by status: `ongoing`, `scheduled`, `cancelled`, and `restored`.
 
+## Architecture
+
+The current system is documented as a LikeC4 model in
+[docs/architecture](docs/architecture/README.md). Run `pnpm c4:dev` to explore
+the context, container, component, resolver, and deployment views.
+
 ## See the resolver in action
 
 One real BENECO advisory, and the structured areas Beacon extracts from its free-text description.

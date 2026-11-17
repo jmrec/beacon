@@ -1,0 +1,263 @@
+model {
+  user = actor "BENECO customer" {
+    summary "Residents and businesses checking whether their area is affected."
+    description '''
+      The public user of Beacon. They browse the map by admin level
+      (province, city/municipality, barangay) and the outage list by period.
+
+      There is no account, no login, and no write path from the user.
+    '''
+  }
+
+  beacon = system "Beacon" {
+    summary "Public outage map and advisory list for BENECO's service area."
+    description '''
+      Beacon collects BENECO's public outage advisories, resolves their
+      free-text affected-area descriptions into barangays, stores the results,
+      and renders them on a MapLibre map and an AG Grid list.
+
+      This model documents the system as it exists today: BENECO is the only
+      enabled provider, and every cache miss goes through the LLM resolver.
+    '''
+
+    web = container "Web app" {
+      technology "React 19 · TanStack Router · TanStack Query · MapLibre GL · AG Grid · Tailwind/shadcn"
+      description '''
+        Browser client. The map shades admin boundaries by pcode; the list
+        shows advisories by period and status. Both share the selected period.
+      '''
+
+      map = component "Outage map" {
+        technology "MapLibre GL JS · mapcn"
+        description "Shades affected barangays, cities, and provinces; hosts the area sheet and the legend."
+      }
+
+      outageList = component "Outage list" {
+        technology "AG Grid Community"
+        description "Filterable, searchable table of unscheduled and scheduled advisories."
+      }
+
+      areaSheet = component "Area sheet" {
+        technology "shadcn Sheet · TanStack Table"
+        description '''
+          Drill-down from an area to the outages affecting it, and from an
+          outage to its affected sub-areas. All data is client-side from the
+          already-loaded overlay and feed.
+        '''
+      }
+
+      periodStore = component "Period selector" {
+        technology "TanStack Store"
+        description "today / this_week / last_week, shared by the map and the list."
+      }
+    }
+
+    server = container "Server" {
+      technology "TanStack Start server functions · Nitro"
+      description '''
+        Server-side data access and orchestration. Server functions fetch the
+        public feeds, resolve areas, persist resolutions, and return either the
+        map overlay or the normalized outage feed.
+      '''
+
+      feed = component "Outage feed service" {
+        description "Generic fetch → parse → normalize pipeline over an OutageProvider. Used by both the list and the map."
+      }
+
+      providers = component "Outage providers" {
+        description '''
+          Provider seam: the OutageProvider interface makes room for other
+          electric cooperatives. Only the BENECO adapter is enabled today.
+        '''
+
+        beneco = component "BENECO adapter" {
+          technology "fetch · Zod"
+          description '''
+            Fetches wballoutages.php and wbscheduledoutages.php, strips HTML,
+            collapses whitespace, and normalizes status and schedule fields.
+          '''
+        }
+      }
+
+      mapData = component "Map data service" {
+        description '''
+          getResolvedOutageAreas: combines the live feed statuses with stored
+          resolutions. Resolves only outages that are missing from the store or
+          whose area text fingerprint changed.
+        '''
+      }
+
+      store = component "Resolution store" {
+        description '''
+          Fingerprint cache in resolved_outages. Reads rows for the live outage
+          ids and upserts fresh resolutions with a company/outage primary key.
+        '''
+      }
+
+      resolver = component "LLM area resolver" {
+        technology "@tanstack/ai · structured output"
+        description '''
+          Provider-agnostic resolver: one chat per outage, a bounded tool-call
+          budget, validation retries, and bounded concurrency. Outputs
+          municipalities → barangays → sub-areas with confidence and scope.
+          BENECO is the only caller today; other cooperatives can reuse it.
+        '''
+      }
+
+      areaTools = component "Area reference tools" {
+        description '''
+          list_municipalities and list_barangays_in_municipality. These are the
+          only tools the resolver may call; they read the BENECO reference schema.
+        '''
+      }
+
+      llmClient = component "LLM client" {
+        technology "@tanstack/ai-gemini · @tanstack/ai-openai · @tanstack/ai-openrouter"
+        description "Selects the adapter and model from LLM_PROVIDER, LLM_MODEL, and LLM_API_KEY."
+      }
+
+      telemetry = component "Resolve telemetry" {
+        description "Optional JSONL metrics per resolution: attempts, iterations, tokens, cost, and tool calls."
+      }
+    }
+
+    db = container "Neon Postgres" {
+      technology "Neon serverless Postgres · Drizzle ORM"
+      description "Durable store for the reference areas and every resolved outage."
+
+      reference = database "beneco reference schema" {
+        description "municipalities and barangays, each with id, name, and pcode."
+      }
+
+      resolutions = database "resolved_outages" {
+        description "One row per company/outage: kind, key, area-text fingerprint, resolution JSONB, and resolved_at."
+      }
+    }
+  }
+
+  benecoPublicApi = externalSystem "BENECO public outage API" {
+    description '''
+      wballoutages.php and wbscheduledoutages.php. Returns arrays of advisories;
+      the affected area is free text in `area` (unscheduled) or `areas`
+      (scheduled). Empty result sets are returned as an error object, not [].
+    '''
+  }
+
+  benecoGisApi = externalSystem "BENECO GIS / ADMS API" {
+    #external #planned
+    technology "Express · PostGIS · GeoJSON"
+    description '''
+      /adms/outages (merged affected polygons + affected barangays),
+      /adms/primary-lines, /gis/substations, and /gis/crew.
+
+      Not consumed by Beacon yet. It is the candidate source of exact outage
+      geometry so BENECO no longer needs the LLM resolver; the resolver stays
+      for cooperatives without a geometry API.
+    '''
+  }
+
+  llmProvider = externalSystem "LLM provider" {
+    #external #llm
+    technology "Gemini / DeepSeek / Together / OpenRouter"
+    description "Produces the structured area resolution and drives the resolver's tool calls."
+  }
+
+  boundaryTiles = externalSystem "Boundary tile server" {
+    #external
+    technology "Vector tiles · adm2_pcode / adm3_pcode / adm4_pcode"
+    description '''
+      ph-boundaries.jmrecondo.com/benguet. Supplies the admin boundaries the
+      map shades. Currently down while it is migrated to K3s.
+    '''
+  }
+
+  basemap = externalSystem "Basemap style" {
+    #external
+    technology "OpenFreeMap Positron / Dark"
+    description "MapLibre base style, roads, and labels."
+  }
+
+  //
+  // User-facing flow
+  //
+
+  user -> beacon.web.map "browses map"
+  user -> beacon.web.outageList "browses advisories"
+
+  beacon.web.map -> beacon.server.mapData "getResolvedOutageAreas({ period })" {
+    technology "TanStack Start server function"
+  }
+  beacon.web.map -> beacon.server.feed "getOutageFeedForMap({ period })" {
+    technology "TanStack Start server function"
+  }
+  beacon.web.outageList -> beacon.server.feed "getOutages({ period })" {
+    technology "TanStack Start server function"
+  }
+
+  beacon.web.periodStore -> beacon.web.map "selected period"
+  beacon.web.periodStore -> beacon.web.outageList "selected period"
+
+  beacon.web.map -> beacon.web.areaSheet "opens drill-down"
+  beacon.web.areaSheet -> beacon.web.map "highlights affected pcodes"
+
+  beacon.web.map -> boundaryTiles "loads ADM2–4 boundaries" {
+    technology "vector tiles"
+  }
+  beacon.web.map -> basemap "loads style and labels" {
+    technology "MapLibre style"
+  }
+
+  //
+  // Server-side resolution flow
+  //
+
+  beacon.server.mapData -> beacon.server.feed "reads live statuses"
+  beacon.server.mapData -> beacon.server.store "loads/persists resolutions"
+  beacon.server.mapData -> beacon.server.resolver "resolves missing/changed outages"
+
+  beacon.server.feed -> beacon.server.providers.beneco "fetchRaw → parse → normalize"
+  beacon.server.providers.beneco -> benecoPublicApi "GET ?period=..." {
+    technology "HTTPS/JSON"
+  }
+
+  beacon.server.store -[sql]-> beacon.db.resolutions "SELECT / INSERT ... ON CONFLICT"
+
+  beacon.server.resolver -> beacon.server.llmClient "chat()"
+  beacon.server.llmClient -> llmProvider "chat completion + structured output"
+
+  beacon.server.resolver -> beacon.server.areaTools "exposes tools"
+  beacon.server.areaTools -[sql]-> beacon.db.reference "queries municipalities/barangays"
+
+  beacon.server.resolver -> beacon.server.telemetry "emits per-outage metrics" {
+    technology "optional JSONL"
+  }
+
+  //
+  // Summary edges for the context and container views
+  //
+
+  user -> beacon "uses" { #overview }
+  beacon -> benecoPublicApi "fetches advisories" { #overview }
+  beacon -> llmProvider "resolves affected areas" { #overview }
+  beacon -> boundaryTiles "loads admin boundaries" { #overview }
+  beacon -> basemap "loads basemap style" { #overview }
+  beacon -> benecoGisApi "candidate: exact outage geometry (not integrated)" {
+    #planned
+    description '''
+      The ADMS endpoint returns a merged affected-area polygon plus the
+      intersecting barangays. It is not wired into Beacon yet.
+    '''
+    style {
+      line dashed
+      color muted
+    }
+  }
+
+  user -> beacon.web "uses" { #overview }
+  beacon.web -> beacon.server "calls server functions" { #overview }
+  beacon.server -> benecoPublicApi "fetches advisories" { #overview }
+  beacon.server -> llmProvider "resolves affected areas" { #overview }
+  beacon.server -> beacon.db "reads/writes resolutions and reference areas" { #overview }
+  beacon.web -> boundaryTiles "loads boundaries" { #overview }
+  beacon.web -> basemap "loads style" { #overview }
+}

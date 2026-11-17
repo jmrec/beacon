@@ -1,0 +1,39 @@
+deployment {
+  environment production {
+    zone app {
+      host dockerHost {
+        description "Node 24 container built from the Dockerfile and run by Compose. It serves the built client and the server functions."
+        web = instanceOf beacon.web
+        server = instanceOf beacon.server
+      }
+    }
+
+    zone managed {
+      neon = instanceOf beacon.db {
+        description "Managed Neon Postgres. Drizzle talks to it over the Neon HTTP driver."
+      }
+    }
+
+    zone external {
+      outageApi = instanceOf benecoPublicApi
+      gisApi = instanceOf benecoGisApi {
+        description "Not integrated yet; candidate source of exact outage geometry."
+      }
+      llm = instanceOf llmProvider
+      tiles = instanceOf boundaryTiles {
+        description "Currently unavailable while it is migrated to K3s."
+      }
+      basemapApi = instanceOf basemap
+    }
+  }
+}
+
+views {
+  deployment view deployment-production {
+    title "Production deployment (current)"
+    description "One Node container, managed Neon, and external APIs. The boundary tile server is being migrated to K3s."
+    include production.**
+    include production.external.gisApi
+    autoLayout LeftRight
+  }
+}

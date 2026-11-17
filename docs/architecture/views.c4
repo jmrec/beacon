@@ -1,0 +1,96 @@
+views {
+  view index {
+    title "System context"
+    description "Beacon, its users, and the external systems it depends on."
+    include user, beacon, benecoPublicApi, benecoGisApi, llmProvider, boundaryTiles, basemap
+    autoLayout TopBottom
+  }
+
+  view containers {
+    title "Containers"
+    description "The web app, the TanStack Start server, and the Neon data store."
+    include user, beacon.web, beacon.server, beacon.db
+    include benecoPublicApi, benecoGisApi, llmProvider, boundaryTiles, basemap
+    autoLayout TopBottom
+  }
+
+  view components {
+    title "Components"
+    description "Client components, server services, and data stores."
+    include beacon.web.*
+    include beacon.server.*
+    include beacon.server.providers.*
+    include beacon.db.*
+    include benecoPublicApi, llmProvider, boundaryTiles, basemap
+
+    // The container/system summary edges would duplicate the component edges.
+    exclude * -> * where tag is #overview
+
+    autoLayout LeftRight
+  }
+
+  view resolver {
+    title "Area resolution"
+    description "How free-text advisories become barangay-level areas, and how the durable cache avoids repeating the work."
+    include beacon.server.feed, beacon.server.providers.beneco
+    include beacon.server.mapData, beacon.server.store
+    include beacon.server.resolver, beacon.server.areaTools, beacon.server.llmClient, beacon.server.telemetry
+    include beacon.db.reference, beacon.db.resolutions
+    include benecoPublicApi, llmProvider
+    exclude * -> * where tag is #overview
+    autoLayout LeftRight
+  }
+
+  view map-data {
+    title "Map data path"
+    description "Cache-hit path for the map: live statuses from the feed, stored resolutions, and the boundary tiles."
+    include beacon.web.map, beacon.web.areaSheet
+    include beacon.server.mapData, beacon.server.feed, beacon.server.providers.beneco, beacon.server.store
+    include beacon.db.resolutions, benecoPublicApi, boundaryTiles, basemap
+    exclude * -> * where tag is #overview
+    autoLayout LeftRight
+  }
+
+  dynamic view resolve-flow {
+    title "Resolve outage areas"
+    description "Cold-cache path: fetch the feeds, resolve with the LLM, persist, and render."
+    variant sequence
+
+    user -> beacon.web.map "opens /"
+    beacon.web.map -> beacon.server.mapData "getResolvedOutageAreas({ period })"
+    beacon.server.mapData -> beacon.server.feed "fetch unscheduled + scheduled"
+    beacon.server.feed -> beacon.server.providers.beneco "fetchRaw → parse → normalize"
+    beacon.server.providers.beneco -> benecoPublicApi "GET wballoutages.php / wbscheduledoutages.php"
+    beacon.server.providers.beneco <- benecoPublicApi "JSON arrays"
+    beacon.server.feed <- beacon.server.providers.beneco "OutageFeed"
+    beacon.server.mapData -> beacon.server.store "getResolvedOutageRows(ids)"
+    beacon.server.store -> beacon.db.resolutions "SELECT ..."
+    beacon.server.store <- beacon.db.resolutions "stored rows"
+    beacon.server.mapData -> beacon.server.resolver "resolve missing/changed"
+    beacon.server.resolver -> beacon.server.llmClient "chat({ tools, outputSchema })"
+    beacon.server.llmClient -> llmProvider "chat completion"
+    beacon.server.resolver -> beacon.server.areaTools "list_municipalities / list_barangays_in_municipality"
+    beacon.server.areaTools -> beacon.db.reference "SELECT municipalities / barangays"
+    beacon.server.areaTools <- beacon.db.reference "rows"
+    beacon.server.llmClient <- llmProvider "structured JSON + tool calls"
+    beacon.server.resolver <- beacon.server.llmClient "AreaResolution"
+    beacon.server.mapData -> beacon.server.store "upsertResolvedOutageRows"
+    beacon.server.store -> beacon.db.resolutions "INSERT ... ON CONFLICT"
+    beacon.server.mapData <- beacon.server.feed "statuses (ongoing/restored)"
+    beacon.web.map <- beacon.server.mapData "AreaOverlayOutage[]"
+    beacon.web.map -> boundaryTiles "load ADM2–4 vector tiles"
+    beacon.web.map -> basemap "load style"
+    beacon.web.map -> beacon.web.areaSheet "render drill-down"
+  }
+
+  dynamic view browse-area {
+    title "Browse an affected area"
+    description "Client-side drill-down; no server or resolver call."
+    variant sequence
+
+    user -> beacon.web.map "clicks a barangay/city/province"
+    beacon.web.map -> beacon.web.areaSheet "opens area node"
+    beacon.web.areaSheet -> beacon.web.map "highlights affected pcodes"
+    user <- beacon.web.areaSheet "outages + affected sub-areas"
+  }
+}

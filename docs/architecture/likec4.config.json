@@ -1,0 +1,9 @@
+{
+  "$schema": "https://likec4.dev/schemas/config.json",
+  "name": "beacon",
+  "title": "Beacon — current system",
+  "exclude": ["**/node_modules/**", "**/dist/**", "**/.likec4/**"],
+  "manualLayouts": {
+    "outDir": ".likec4"
+  }
+}

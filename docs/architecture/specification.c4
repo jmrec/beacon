@@ -1,0 +1,82 @@
+specification {
+  element actor {
+    notation "Person"
+    style {
+      shape person
+      color primary
+    }
+  }
+
+  element system {
+    style {
+      color slate
+    }
+  }
+
+  element container {
+    style {
+      shape component
+      color blue
+    }
+  }
+
+  element component {
+    style {
+      shape component
+      color indigo
+    }
+  }
+
+  element database {
+    style {
+      shape storage
+      color green
+    }
+  }
+
+  element externalSystem {
+    style {
+      shape component
+      color slate
+      border dashed
+    }
+  }
+
+  relationship sync {
+    line solid
+  }
+
+  relationship async {
+    color amber
+    line dotted
+    head diamond
+  }
+
+  relationship sql {
+    technology "SQL"
+    line dashed
+  }
+
+  tag external
+  tag data
+  tag llm
+  tag resolver
+  tag planned
+  tag overview
+  tag ui
+
+  deploymentNode environment {
+    notation "Environment"
+    style {
+      color slate
+    }
+  }
+
+  deploymentNode zone {
+    notation "Zone"
+  }
+
+  deploymentNode host {
+    notation "Host"
+  }
+}
